@@ -1,4 +1,4 @@
-import type { Callback, ItemsInput, Key } from './types';
+import type { Callback, Constructor, ItemsInput, Key, Operator, Primitive } from './types';
 
 // A sentinel telling an absent value apart from a stored undefined, which is what
 // lets `select` skip the keys an item does not carry instead of writing them out
@@ -100,10 +100,44 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the item that comes right after the first item matching the given value or callback.
+     */
+    after(value: V | Callback<V, boolean>, strict: boolean = false): V | undefined {
+        const entries: [Key, V][] = this.entries();
+        const predicate: Callback<V, boolean> = this.equality(value, strict);
+        const index: number = entries.findIndex(([key, item]: [Key, V]): boolean => this.truthy(predicate(item, key)));
+
+        if (index === -1) {
+            return undefined;
+        }
+
+        const found: [Key, V] | undefined = entries[index + 1];
+
+        return found === undefined ? undefined : found[1];
+    }
+
+    /**
      * Get the underlying items, as an array for lists and a plain object otherwise.
      */
     all(): V[] | Record<string, V> {
         return this.list() ? [...this.items.values()] : Object.fromEntries(this.items) as Record<string, V>;
+    }
+
+    /**
+     * Get the item that comes right before the first item matching the given value or callback.
+     */
+    before(value: V | Callback<V, boolean>, strict: boolean = false): V | undefined {
+        const entries: [Key, V][] = this.entries();
+        const predicate: Callback<V, boolean> = this.equality(value, strict);
+        const index: number = entries.findIndex(([key, item]: [Key, V]): boolean => this.truthy(predicate(item, key)));
+
+        if (index === -1) {
+            return undefined;
+        }
+
+        const found: [Key, V] | undefined = entries[index - 1];
+
+        return found === undefined ? undefined : found[1];
     }
 
     /**
@@ -114,10 +148,108 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Determine whether the collection contains the given value, callback match, or key-value condition.
+     */
+    contains(key: V | Callback<V, boolean> | Key, operator?: unknown, value?: unknown): boolean {
+        if (typeof key === 'function') {
+            return this.entries().some(([name, item]: [Key, V]): boolean => this.truthy((key as Callback<V, boolean>)(item, name)));
+        }
+
+        if (arguments.length === 1) {
+            return [...this.items.values()].some((item: V): boolean => this.looseEquals(item, key));
+        }
+
+        const condition: Callback<V, boolean> = this.condition(key as Key, operator, value, arguments.length);
+
+        return this.entries().some(([name, item]: [Key, V]): boolean => condition(item, name));
+    }
+
+    /**
+     * Determine whether the collection holds exactly one item, or one item passing the callback.
+     */
+    containsOneItem(callback?: Callback<V, boolean>): boolean {
+        if (callback === undefined) {
+            return this.count() === 1;
+        }
+
+        return this.filter(callback).count() === 1;
+    }
+
+    /**
+     * Determine whether the collection contains the given value or key-value pair using strict comparison.
+     */
+    containsStrict(key: V | Callback<V, boolean> | Key, value?: unknown): boolean {
+        if (arguments.length === 2) {
+            return this.entries().some(([, item]: [Key, V]): boolean => this.dataGet(item, key as Key) === value);
+        }
+
+        if (typeof key === 'function') {
+            return this.contains(key);
+        }
+
+        return [...this.items.values()].some((item: V): boolean => item === key);
+    }
+
+    /**
      * Count the number of items in the collection.
      */
     count(): number {
         return this.items.size;
+    }
+
+    /**
+     * Determine whether the collection does not contain the given value, callback match, or condition.
+     */
+    doesntContain(key: V | Callback<V, boolean> | Key, operator?: unknown, value?: unknown): boolean {
+        switch (arguments.length) {
+            case 1:
+                return !this.contains(key);
+            case 2:
+                return !this.contains(key, operator);
+            default:
+                return !this.contains(key, operator, value);
+        }
+    }
+
+    /**
+     * Determine whether the collection does not contain the given value or pair using strict comparison.
+     */
+    doesntContainStrict(key: V | Callback<V, boolean> | Key, value?: unknown): boolean {
+        switch (arguments.length) {
+            case 1:
+                return !this.containsStrict(key);
+            default:
+                return !this.containsStrict(key, value);
+        }
+    }
+
+    /**
+     * Get the values that appear more than once, keyed by the offending occurrences.
+     */
+    duplicates(callback?: Key | Callback<V>, strict: boolean = false): Collection<unknown> {
+        const retriever: Callback<V> = this.retriever(callback);
+        const seen: unknown[] = [];
+        const duplicates: Map<Key, unknown> = new Map<Key, unknown>();
+
+        for (const [key, value] of this.items) {
+            const derived: unknown = retriever(value, key);
+            const exists: boolean = strict ? seen.includes(derived) : seen.some((item: unknown): boolean => this.looseEquals(item, derived));
+
+            if (exists) {
+                duplicates.set(key, derived);
+            } else {
+                seen.push(derived);
+            }
+        }
+
+        return new Collection<unknown>(duplicates);
+    }
+
+    /**
+     * Get the values that appear more than once using strict comparison.
+     */
+    duplicatesStrict(callback?: Key | Callback<V>): Collection<unknown> {
+        return this.duplicates(callback, true);
     }
 
     /**
@@ -138,6 +270,21 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     eachSpread(callback: (...args: unknown[]) => unknown): this {
         return this.each((value: V, key: Key): unknown => callback(...this.spread(value), key));
+    }
+
+    /**
+     * Determine whether all items pass the given callback, truth test, or key-value condition.
+     */
+    every(key: Key | Callback<V>, operator?: unknown, value?: unknown): boolean {
+        if (arguments.length === 1) {
+            const retriever: Callback<V> = this.retriever(key);
+
+            return this.entries().every(([name, item]: [Key, V]): boolean => this.truthy(retriever(item, name)));
+        }
+
+        const condition: Callback<V, boolean> = this.condition(key as Key, operator, value, arguments.length);
+
+        return this.entries().every(([name, item]: [Key, V]): boolean => condition(item, name));
     }
 
     /**
@@ -174,6 +321,32 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return this.resolve(fallback);
+    }
+
+    /**
+     * Get the first item matching the given key-value condition.
+     */
+    firstWhere(key: Key, operator?: unknown, value?: unknown): V | undefined {
+        const condition: Callback<V, boolean> = this.condition(key, operator, value, arguments.length);
+
+        return this.first((item: V, name: Key): boolean => condition(item, name));
+    }
+
+    /**
+     * Swap the keys with their corresponding string or number values.
+     */
+    flip(): Collection<Key> {
+        const flipped: Map<Key, Key> = new Map<Key, Key>();
+
+        for (const [key, value] of this.items) {
+            if (typeof value !== 'string' && typeof value !== 'number') {
+                throw new TypeError(`Collection values must be strings or numbers to flip, [${this.typeOf(value)}] found at key [${key}].`);
+            }
+
+            flipped.set(this.key(value), key);
+        }
+
+        return new Collection<Key>(flipped);
     }
 
     /**
@@ -390,6 +563,21 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the key of the first item matching the given value or callback, or false when absent.
+     */
+    search(value: V | Callback<V, boolean>, strict: boolean = false): Key | false {
+        const predicate: Callback<V, boolean> = this.equality(value, strict);
+
+        for (const [key, item] of this.items) {
+            if (this.truthy(predicate(item, key))) {
+                return key;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Reduce each item to only the given keys.
      */
     select(...keys: Key[]): Collection<Record<string, unknown>> {
@@ -409,6 +597,20 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Determine whether the collection contains the given value, callback match, or condition.
+     */
+    some(key: V | Callback<V, boolean> | Key, operator?: unknown, value?: unknown): boolean {
+        switch (arguments.length) {
+            case 1:
+                return this.contains(key);
+            case 2:
+                return this.contains(key, operator);
+            default:
+                return this.contains(key, operator, value);
+        }
+    }
+
+    /**
      * Map the items through the callback in place.
      */
     transform(callback: Callback<V, V>): this {
@@ -420,10 +622,136 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the items with duplicate values removed.
+     */
+    unique(key?: Key | Callback<V>, strict: boolean = false): Collection<V> {
+        const retriever: Callback<V> = this.retriever(key);
+        const seen: unknown[] = [];
+
+        const entries: [Key, V][] = this.entries().filter(([name, value]: [Key, V]): boolean => {
+            const derived: unknown = retriever(value, name);
+            const exists: boolean = strict
+                ? seen.includes(derived)
+                : seen.some((item: unknown): boolean => this.looseEquals(item, derived));
+
+            if (exists) {
+                return false;
+            }
+
+            seen.push(derived);
+
+            return true;
+        });
+
+        return new Collection<V>(new Map<Key, V>(entries));
+    }
+
+    /**
+     * Get the items with duplicate values removed using strict comparison.
+     */
+    uniqueStrict(key?: Key | Callback<V>): Collection<V> {
+        return this.unique(key, true);
+    }
+
+    /**
+     * Get the value of the given key from the first item holding it.
+     */
+    value(key: Key): unknown;
+    value<F>(key: Key, fallback: F | (() => F)): unknown;
+    value(key: Key, fallback?: unknown): unknown {
+        const found: V | undefined = this.first((item: V): boolean => this.dataGet(item, key) !== null && this.dataGet(item, key) !== undefined);
+
+        return found === undefined ? this.resolve(fallback) : this.dataGet(found, key, fallback);
+    }
+
+    /**
      * Get the values of the collection, renumbering the keys.
      */
     values(): Collection<V> {
         return new Collection<V>([...this.items.values()]);
+    }
+
+    /**
+     * Get the items matching the given key-value condition.
+     */
+    where(key: Key, operator?: unknown, value?: unknown): Collection<V> {
+        const condition: Callback<V, boolean> = this.condition(key, operator, value, arguments.length);
+
+        return this.filter((item: V, name: Key): boolean => condition(item, name));
+    }
+
+    /**
+     * Get the items whose value at the given key falls inside the given range.
+     */
+    whereBetween(key: Key, range: [unknown, unknown]): Collection<V> {
+        return this.filter((item: V): boolean => this.compare(this.dataGet(item, key), '>=', range[0]) && this.compare(this.dataGet(item, key), '<=', range[1]));
+    }
+
+    /**
+     * Get the items whose value at the given key is present in the given values.
+     */
+    whereIn(key: Key, values: ItemsInput<unknown>, strict: boolean = false): Collection<V> {
+        const allowed: unknown[] = this.valuesOf(values);
+
+        return this.filter((item: V): boolean => this.included(allowed, this.dataGet(item, key), strict));
+    }
+
+    /**
+     * Get the items whose value at the given key is present in the given values, compared strictly.
+     */
+    whereInStrict(key: Key, values: ItemsInput<unknown>): Collection<V> {
+        return this.whereIn(key, values, true);
+    }
+
+    /**
+     * Get the items that are instances of the given class.
+     */
+    whereInstanceOf<T>(type: Constructor<T>): Collection<V> {
+        return this.filter((item: V): boolean => item instanceof type);
+    }
+
+    /**
+     * Get the items whose value at the given key falls outside the given range.
+     */
+    whereNotBetween(key: Key, range: [unknown, unknown]): Collection<V> {
+        return this.filter((item: V): boolean => this.compare(this.dataGet(item, key), '<', range[0]) || this.compare(this.dataGet(item, key), '>', range[1]));
+    }
+
+    /**
+     * Get the items whose value at the given key is absent from the given values.
+     */
+    whereNotIn(key: Key, values: ItemsInput<unknown>, strict: boolean = false): Collection<V> {
+        const rejected: unknown[] = this.valuesOf(values);
+
+        return this.filter((item: V): boolean => !this.included(rejected, this.dataGet(item, key), strict));
+    }
+
+    /**
+     * Get the items whose value at the given key is absent from the given values, compared strictly.
+     */
+    whereNotInStrict(key: Key, values: ItemsInput<unknown>): Collection<V> {
+        return this.whereNotIn(key, values, true);
+    }
+
+    /**
+     * Get the items whose value at the given key is not null.
+     */
+    whereNotNull(key?: Key): Collection<V> {
+        return this.filter((item: V): boolean => !this.nullish(key === undefined ? item : this.dataGet(item, key)));
+    }
+
+    /**
+     * Get the items whose value at the given key is null.
+     */
+    whereNull(key?: Key): Collection<V> {
+        return this.filter((item: V): boolean => this.nullish(key === undefined ? item : this.dataGet(item, key)));
+    }
+
+    /**
+     * Get the items matching the given key-value condition using strict comparison.
+     */
+    whereStrict(key: Key, value: unknown): Collection<V> {
+        return this.where(key, '===', value);
     }
 
     /**
@@ -571,6 +899,21 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the type name of a value for error messages and type checks.
+     */
+    protected typeOf(value: unknown): Primitive {
+        if (value === null) {
+            return 'null';
+        }
+
+        if (Array.isArray(value)) {
+            return 'array';
+        }
+
+        return typeof value as Primitive;
+    }
+
+    /**
      * Build a value retriever from a key, a callback, or nothing at all.
      */
     protected retriever(key?: Key | Callback<V>): Callback<V> {
@@ -583,6 +926,144 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return (value: V): unknown => this.dataGet(value, key);
+    }
+
+    /**
+     * Build a predicate from a key, an optional operator, and a value.
+     */
+    protected condition(key: Key, operator: unknown, value: unknown, length: number): Callback<V, boolean> {
+        const comparison: Operator = (length === 2 ? '=' : operator) as Operator;
+        const compared: unknown = length === 2 ? operator : value;
+
+        return (item: V): boolean => this.compare(this.dataGet(item, key), comparison, compared);
+    }
+
+    /**
+     * Compare a retrieved value against the given value using the given operator.
+     */
+    protected compare(retrieved: unknown, operator: Operator, value: unknown): boolean {
+        switch (operator) {
+            case '=':
+            case '==':
+                return this.looseEquals(retrieved, value);
+            case '!=':
+            case '<>':
+                return !this.looseEquals(retrieved, value);
+            case '===':
+                return retrieved === value;
+            case '!==':
+                return retrieved !== value;
+            case '<':
+                return this.comparator(retrieved, value) < 0;
+            case '>':
+                return this.comparator(retrieved, value) > 0;
+            case '<=':
+                return this.comparator(retrieved, value) <= 0;
+            case '>=':
+                return this.comparator(retrieved, value) >= 0;
+            default:
+                throw new TypeError(`Unknown operator [${String(operator)}].`);
+        }
+    }
+
+    /**
+     * Determine whether a value is a number or a numeric string.
+     */
+    protected numeric(value: unknown): boolean {
+        if (typeof value === 'number') {
+            return !Number.isNaN(value);
+        }
+
+        return typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value));
+    }
+
+    /**
+     * Compare two values loosely, in the spirit of PHP's equality operator.
+     */
+    protected looseEquals(a: unknown, b: unknown): boolean {
+        if (Object.is(a, b)) {
+            return true;
+        }
+
+        if (this.nullish(a) || this.nullish(b)) {
+            return this.nullish(a) && this.nullish(b);
+        }
+
+        if (typeof a === 'object' && typeof b === 'object') {
+            return this.structural(a, b);
+        }
+
+        if (typeof a === 'object' || typeof b === 'object') {
+            return false;
+        }
+
+        if (typeof a === typeof b) {
+            return a === b;
+        }
+
+        if (typeof a === 'boolean' || typeof b === 'boolean') {
+            return this.truthy(a) === this.truthy(b);
+        }
+
+        return this.numeric(a) && this.numeric(b) && Number(a) === Number(b);
+    }
+
+    /**
+     * Compare two objects by the shape and values of their entries.
+     */
+    protected structural(a: unknown, b: unknown): boolean {
+        if (a instanceof Date && b instanceof Date) {
+            return a.getTime() === b.getTime();
+        }
+
+        if (!this.nested(a) || !this.nested(b)) {
+            return false;
+        }
+
+        const left: [Key, unknown][] = this.parse(a as ItemsInput<unknown>);
+        const right: Map<Key, unknown> = new Map<Key, unknown>(this.parse(b as ItemsInput<unknown>));
+
+        if (left.length !== right.size) {
+            return false;
+        }
+
+        return left.every(([key, value]: [Key, unknown]): boolean => right.has(key) && this.looseEquals(right.get(key), value));
+    }
+
+    /**
+     * Compare two values for ordering, numerically when possible and by string otherwise.
+     */
+    protected comparator(a: unknown, b: unknown): number {
+        if (this.numeric(a) && this.numeric(b)) {
+            return Number(a) < Number(b) ? -1 : Number(a) > Number(b) ? 1 : 0;
+        }
+
+        if (this.nullish(a) || this.nullish(b)) {
+            return this.nullish(a) && this.nullish(b) ? 0 : this.nullish(a) ? -1 : 1;
+        }
+
+        const left: string = String(a);
+        const right: string = String(b);
+
+        return left < right ? -1 : left > right ? 1 : 0;
+    }
+
+    /**
+     * Build an equality predicate from a value or a callback.
+     */
+    protected equality(value: V | Callback<V, boolean>, strict: boolean): Callback<V, boolean> {
+        if (typeof value === 'function') {
+            return value as Callback<V, boolean>;
+        }
+
+        return (item: V): boolean => strict ? item === value : this.looseEquals(item, value);
+    }
+
+    /**
+     * Determine whether a value is present among the given values.
+     */
+    protected included(values: unknown[], value: unknown, strict: boolean): boolean {
+        return values.some((entry: unknown): boolean => strict ? entry === value : this.looseEquals(entry, value));
     }
 
     /**

@@ -139,11 +139,44 @@ describe('Collection.wrap', (): void => {
     });
 });
 
+describe('Collection.after', (): void => {
+    test('returns the item following the matched value', (): void => {
+        expect(new Collection<number>([1, 2, 3]).after(2)).toEqual(3);
+    });
+
+    test('returns undefined when the match is last or absent', (): void => {
+        expect(new Collection<number>([1, 2, 3]).after(3)).toBeUndefined();
+        expect(new Collection<number>([1, 2, 3]).after(9)).toBeUndefined();
+    });
+
+    test('accepts a callback and a strict comparison', (): void => {
+        expect(new Collection<number>([1, 2, 3]).after((value: number): boolean => value > 1)).toEqual(3);
+        expect(new Collection<unknown>([1, '2', 3]).after(2)).toEqual(3);
+        expect(new Collection<unknown>([1, '2', 3]).after(2, true)).toBeUndefined();
+    });
+});
+
 describe('Collection.all', (): void => {
     test('returns an array for a list and an object otherwise', (): void => {
         expect(new Collection<number>([1, 2]).all()).toEqual([1, 2]);
         expect(new Collection<number>({ a: 1 }).all()).toEqual({ a: 1 });
         expect(new Collection<number>(new Map<Key, number>([[1, 'a' as unknown as number]])).all()).toEqual({ 1: 'a' });
+    });
+});
+
+describe('Collection.before', (): void => {
+    test('returns the item preceding the matched value', (): void => {
+        expect(new Collection<number>([1, 2, 3]).before(2)).toEqual(1);
+    });
+
+    test('returns undefined when the match is first or absent', (): void => {
+        expect(new Collection<number>([1, 2, 3]).before(1)).toBeUndefined();
+        expect(new Collection<number>([1, 2, 3]).before(9)).toBeUndefined();
+    });
+
+    test('accepts a callback and a strict comparison', (): void => {
+        expect(new Collection<number>([1, 2, 3]).before((value: number): boolean => value > 2)).toEqual(2);
+        expect(new Collection<unknown>([1, '2', 3]).before(2, true)).toBeUndefined();
     });
 });
 
@@ -157,10 +190,97 @@ describe('Collection.collect', (): void => {
     });
 });
 
+describe('Collection.contains', (): void => {
+    test('matches a value loosely', (): void => {
+        expect(new Collection<unknown>([1, 2]).contains('2')).toEqual(true);
+        expect(new Collection<unknown>([1, 2]).contains(3)).toEqual(false);
+    });
+
+    test('matches a callback', (): void => {
+        expect(new Collection<number>([1, 2]).contains((value: number): boolean => value > 1)).toEqual(true);
+    });
+
+    test('matches a key-value pair and a key-operator-value condition', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(collection.contains('name', 'Desk')).toEqual(true);
+        expect(collection.contains('name', 'Sofa')).toEqual(false);
+        expect(collection.contains('price', '>', 150)).toEqual(true);
+        expect(collection.contains('price', '>', 500)).toEqual(false);
+    });
+});
+
+describe('Collection.containsOneItem', (): void => {
+    test('determines whether exactly one item is held', (): void => {
+        expect(new Collection<number>([1]).containsOneItem()).toEqual(true);
+        expect(new Collection<number>([1, 2]).containsOneItem()).toEqual(false);
+        expect(new Collection<number>([]).containsOneItem()).toEqual(false);
+    });
+
+    test('determines whether exactly one item passes the callback', (): void => {
+        expect(new Collection<number>([1, 2, 3]).containsOneItem((value: number): boolean => value > 2)).toEqual(true);
+        expect(new Collection<number>([1, 2, 3]).containsOneItem((value: number): boolean => value > 1)).toEqual(false);
+    });
+});
+
+describe('Collection.containsStrict', (): void => {
+    test('matches a value strictly', (): void => {
+        expect(new Collection<unknown>([1, 2]).containsStrict(2)).toEqual(true);
+        expect(new Collection<unknown>([1, '2']).containsStrict(2)).toEqual(false);
+    });
+
+    test('matches a key-value pair strictly', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(collection.containsStrict('price', 200)).toEqual(true);
+        expect(collection.containsStrict('price', '200')).toEqual(false);
+    });
+
+    test('matches a callback', (): void => {
+        expect(new Collection<number>([1, 2]).containsStrict((value: number): boolean => value === 2)).toEqual(true);
+    });
+});
+
 describe('Collection.count', (): void => {
     test('counts the items', (): void => {
         expect(new Collection<number>([1, 2]).count()).toEqual(2);
         expect(new Collection<number>([]).count()).toEqual(0);
+    });
+});
+
+describe('Collection.doesntContain', (): void => {
+    test('negates every arity of contains', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(new Collection<number>([1, 2]).doesntContain(3)).toEqual(true);
+        expect(collection.doesntContain('name', 'Sofa')).toEqual(true);
+        expect(collection.doesntContain('price', '>', 500)).toEqual(true);
+        expect(collection.doesntContain('price', '>', 150)).toEqual(false);
+    });
+});
+
+describe('Collection.doesntContainStrict', (): void => {
+    test('negates every arity of containsStrict', (): void => {
+        expect(new Collection<unknown>([1, '2']).doesntContainStrict(2)).toEqual(true);
+        expect(new Collection<Product>(products).doesntContainStrict('price', '200')).toEqual(true);
+        expect(new Collection<Product>(products).doesntContainStrict('price', 200)).toEqual(false);
+    });
+});
+
+describe('Collection.duplicates', (): void => {
+    test('returns the repeated values keyed by their later occurrence', (): void => {
+        expect(new Collection<string>(['a', 'b', 'a', 'b', 'c']).duplicates().all()).toEqual({ 2: 'a', 3: 'b' });
+    });
+
+    test('compares the retrieved values loosely by default', (): void => {
+        expect(new Collection<unknown>([1, '1']).duplicates().all()).toEqual({ 1: '1' });
+        expect(new Collection<Product>(products).duplicates('price').all()).toEqual({ 2: 100 });
+    });
+});
+
+describe('Collection.duplicatesStrict', (): void => {
+    test('compares the retrieved values strictly', (): void => {
+        expect(new Collection<unknown>([1, '1', 1]).duplicatesStrict().all()).toEqual({ 2: 1 });
     });
 });
 
@@ -196,6 +316,24 @@ describe('Collection.eachSpread', (): void => {
     });
 });
 
+describe('Collection.every', (): void => {
+    test('determines whether every item passes the callback', (): void => {
+        expect(new Collection<number>([2, 4]).every((value: number): boolean => value % 2 === 0)).toEqual(true);
+        expect(new Collection<number>([2, 3]).every((value: number): boolean => value % 2 === 0)).toEqual(false);
+        expect(new Collection<number>([]).every((value: number): boolean => value > 0)).toEqual(true);
+    });
+
+    test('determines whether every item holds a truthy value at the key', (): void => {
+        expect(new Collection<Product>(products).every('name')).toEqual(true);
+        expect(new Collection<Product>(products).every('stock')).toEqual(false);
+    });
+
+    test('determines whether every item matches the condition', (): void => {
+        expect(new Collection<Product>(products).every('price', '>=', 100)).toEqual(true);
+        expect(new Collection<Product>(products).every('category', 'office')).toEqual(false);
+    });
+});
+
 describe('Collection.except', (): void => {
     test('returns all items except those with the given keys', (): void => {
         expect(new Collection<number>({ a: 1, b: 2, c: 3 }).except('a', 'c').all()).toEqual({ b: 2 });
@@ -227,6 +365,27 @@ describe('Collection.first', (): void => {
         expect(new Collection<number>([1]).first((value: number): boolean => value > 1, 0)).toEqual(0);
         expect(new Collection<number>([1]).first(undefined, 0)).toEqual(1);
         expect(new Collection<number>([]).first(undefined, (): number => 9)).toEqual(9);
+    });
+});
+
+describe('Collection.firstWhere', (): void => {
+    test('returns the first item matching the condition', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(collection.firstWhere('category', 'home')?.name).toEqual('Door');
+        expect(collection.firstWhere('price', '>', 150)?.name).toEqual('Desk');
+        expect(collection.firstWhere('name', 'Sofa')).toBeUndefined();
+    });
+});
+
+describe('Collection.flip', (): void => {
+    test('swaps keys with values', (): void => {
+        expect(new Collection<string>({ name: 'John' }).flip().all()).toEqual({ John: 'name' });
+        expect(new Collection<string>(['a', 'b']).flip().all()).toEqual({ a: 0, b: 1 });
+    });
+
+    test('throws for values that cannot be keys', (): void => {
+        expect((): unknown => new Collection<unknown>([{}]).flip()).toThrow('Collection values must be strings or numbers to flip, [object] found at key [0].');
     });
 });
 
@@ -443,6 +602,23 @@ describe('Collection.reject', (): void => {
     });
 });
 
+describe('Collection.search', (): void => {
+    test('returns the key of the first match', (): void => {
+        expect(new Collection<number>([1, 2, 3]).search(2)).toEqual(1);
+        expect(new Collection<number>({ a: 1 }).search(1)).toEqual('a');
+    });
+
+    test('returns false when nothing matches', (): void => {
+        expect(new Collection<number>([1]).search(9)).toEqual(false);
+    });
+
+    test('accepts a callback and a strict comparison', (): void => {
+        expect(new Collection<number>([1, 2, 3]).search((value: number): boolean => value > 1)).toEqual(1);
+        expect(new Collection<unknown>(['2']).search(2)).toEqual(0);
+        expect(new Collection<unknown>(['2']).search(2, true)).toEqual(false);
+    });
+});
+
 describe('Collection.select', (): void => {
     test('reduces each item to the given keys', (): void => {
         expect(new Collection<Product>(products).select('name', 'price').all()).toEqual([
@@ -457,6 +633,17 @@ describe('Collection.select', (): void => {
     });
 });
 
+describe('Collection.some', (): void => {
+    test('mirrors every arity of contains', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(new Collection<number>([1, 2]).some(2)).toEqual(true);
+        expect(collection.some('name', 'Desk')).toEqual(true);
+        expect(collection.some('price', '>', 150)).toEqual(true);
+        expect(collection.some('price', '>', 500)).toEqual(false);
+    });
+});
+
 describe('Collection.transform', (): void => {
     test('maps the items in place', (): void => {
         const collection: Collection<number> = new Collection<number>({ a: 1, b: 2 });
@@ -466,9 +653,142 @@ describe('Collection.transform', (): void => {
     });
 });
 
+describe('Collection.unique', (): void => {
+    test('removes duplicate values loosely', (): void => {
+        expect(new Collection<unknown>([1, '1', 2]).unique().values().all()).toEqual([1, 2]);
+        expect(new Collection<number>([1, 2, 1]).unique().all()).toEqual([1, 2]);
+    });
+
+    test('removes duplicates by the retrieved value', (): void => {
+        expect(new Collection<Product>(products).unique('price').pluck('name').all()).toEqual(['Desk', 'Chair']);
+        expect(new Collection<Product>(products).unique((product: Product): string => product.category).pluck('name').all()).toEqual(['Desk', 'Door']);
+    });
+});
+
+describe('Collection.uniqueStrict', (): void => {
+    test('removes duplicate values strictly', (): void => {
+        expect(new Collection<unknown>([1, '1', 1]).uniqueStrict().values().all()).toEqual([1, '1']);
+    });
+});
+
+describe('Collection.value', (): void => {
+    test('returns the value of the key from the first item holding it', (): void => {
+        expect(new Collection<Product>(products).value('name')).toEqual('Desk');
+        expect(new Collection<Product>(products).value('stock')).toEqual(6);
+    });
+
+    test('falls back when no item holds the key', (): void => {
+        expect(new Collection<Product>(products).value('missing')).toBeUndefined();
+        expect(new Collection<Product>(products).value('missing', 'none')).toEqual('none');
+        expect(new Collection<Product>([]).value('name', (): string => 'none')).toEqual('none');
+    });
+});
+
 describe('Collection.values', (): void => {
     test('renumbers the keys', (): void => {
         expect(new Collection<number>({ a: 1, b: 2 }).values().all()).toEqual([1, 2]);
+    });
+});
+
+describe('Collection.where', (): void => {
+    test('filters by a key-value pair', (): void => {
+        expect(new Collection<Product>(products).where('category', 'office').pluck('name').all()).toEqual(['Desk', 'Chair']);
+    });
+
+    test('filters by every supported operator', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(collection.where('price', '=', 100).count()).toEqual(2);
+        expect(collection.where('price', '==', '100').count()).toEqual(2);
+        expect(collection.where('price', '===', 100).count()).toEqual(2);
+        expect(collection.where('price', '===', '100').count()).toEqual(0);
+        expect(collection.where('price', '!=', 100).count()).toEqual(1);
+        expect(collection.where('price', '<>', 100).count()).toEqual(1);
+        expect(collection.where('price', '!==', '100').count()).toEqual(3);
+        expect(collection.where('price', '<', 200).count()).toEqual(2);
+        expect(collection.where('price', '>', 100).count()).toEqual(1);
+        expect(collection.where('price', '<=', 100).count()).toEqual(2);
+        expect(collection.where('price', '>=', 200).count()).toEqual(1);
+    });
+
+    test('throws on an unknown operator', (): void => {
+        expect((): unknown => new Collection<Product>(products).where('price', 'like', 100).count()).toThrow('Unknown operator [like].');
+    });
+
+    test('reads through dot notation', (): void => {
+        const orders: Collection<unknown> = new Collection<unknown>([{ customer: { name: 'John' } }, { customer: { name: 'Jane' } }]);
+
+        expect(orders.where('customer.name', 'Jane').count()).toEqual(1);
+    });
+});
+
+describe('Collection.whereBetween', (): void => {
+    test('keeps the items inside the range', (): void => {
+        expect(new Collection<Product>(products).whereBetween('price', [100, 150]).pluck('name').all()).toEqual(['Chair', 'Door']);
+    });
+});
+
+describe('Collection.whereIn', (): void => {
+    test('keeps the items whose value is among the given values', (): void => {
+        expect(new Collection<Product>(products).whereIn('price', [100]).count()).toEqual(2);
+        expect(new Collection<Product>(products).whereIn('price', ['100']).count()).toEqual(2);
+    });
+});
+
+describe('Collection.whereInStrict', (): void => {
+    test('compares the values strictly', (): void => {
+        expect(new Collection<Product>(products).whereInStrict('price', ['100']).count()).toEqual(0);
+        expect(new Collection<Product>(products).whereInStrict('price', [100]).count()).toEqual(2);
+    });
+});
+
+describe('Collection.whereInstanceOf', (): void => {
+    test('keeps the items that are instances of the given class', (): void => {
+        class Person {
+        }
+
+        const collection: Collection<unknown> = new Collection<unknown>([new Person(), 'value', new Date()]);
+
+        expect(collection.whereInstanceOf(Person).count()).toEqual(1);
+    });
+});
+
+describe('Collection.whereNotBetween', (): void => {
+    test('keeps the items outside the range', (): void => {
+        expect(new Collection<Product>(products).whereNotBetween('price', [100, 150]).pluck('name').all()).toEqual(['Desk']);
+    });
+});
+
+describe('Collection.whereNotIn', (): void => {
+    test('keeps the items whose value is absent from the given values', (): void => {
+        expect(new Collection<Product>(products).whereNotIn('price', [100]).pluck('name').all()).toEqual(['Desk']);
+    });
+});
+
+describe('Collection.whereNotInStrict', (): void => {
+    test('compares the values strictly', (): void => {
+        expect(new Collection<Product>(products).whereNotInStrict('price', ['100']).count()).toEqual(3);
+    });
+});
+
+describe('Collection.whereNotNull', (): void => {
+    test('keeps the items whose value is not nullish', (): void => {
+        expect(new Collection<Product>(products).whereNotNull('stock').pluck('name').all()).toEqual(['Desk', 'Door']);
+        expect(new Collection<unknown>([1, null, undefined]).whereNotNull().values().all()).toEqual([1]);
+    });
+});
+
+describe('Collection.whereNull', (): void => {
+    test('keeps the items whose value is nullish', (): void => {
+        expect(new Collection<Product>(products).whereNull('stock').pluck('name').all()).toEqual(['Chair']);
+        expect(new Collection<unknown>([1, null]).whereNull().values().all()).toEqual([null]);
+    });
+});
+
+describe('Collection.whereStrict', (): void => {
+    test('filters by a strictly compared key-value pair', (): void => {
+        expect(new Collection<Product>(products).whereStrict('price', 100).count()).toEqual(2);
+        expect(new Collection<Product>(products).whereStrict('price', '100').count()).toEqual(0);
     });
 });
 
@@ -485,5 +805,34 @@ describe('Collection[Symbol.iterator]', (): void => {
         }
 
         expect(seen).toEqual([1, 2]);
+    });
+});
+
+describe('Collection dot-notation reads', (): void => {
+    test('reads through nested collections and maps', (): void => {
+        const collection: Collection<unknown> = new Collection<unknown>([
+            { inner: new Collection<number>({ a: 1 }) },
+            { inner: new Map<Key, number>([['a', 2]]) },
+        ]);
+
+        expect(collection.pluck('inner.a').all()).toEqual([1, 2]);
+    });
+
+    test('reads an integer key', (): void => {
+        expect(new Collection<unknown>([['a', 'b']]).pluck(1).all()).toEqual(['b']);
+    });
+
+    test('falls back on a missing or unreachable path', (): void => {
+        const collection: Collection<unknown> = new Collection<unknown>([{ a: null }]);
+
+        expect(collection.pluck('a.b').all()).toEqual([undefined]);
+        expect(collection.pluck('missing.deep').all()).toEqual([undefined]);
+        expect(collection.where('a.*', 1).count()).toEqual(0);
+    });
+
+    test('collects every value behind a wildcard', (): void => {
+        const collection: Collection<unknown> = new Collection<unknown>([{ roles: [{ name: 'admin' }] }]);
+
+        expect(collection.pluck('roles.*').all()).toEqual([[{ name: 'admin' }]]);
     });
 });
