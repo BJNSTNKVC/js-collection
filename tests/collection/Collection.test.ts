@@ -178,6 +178,31 @@ describe('Collection.all', (): void => {
     });
 });
 
+describe('Collection.average', (): void => {
+    test('averages the items', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4]).average()).toEqual(2.5);
+    });
+
+    test('averages the retrieved values', (): void => {
+        expect(new Collection<Product>(products).average('price')).toEqual(400 / 3);
+    });
+});
+
+describe('Collection.avg', (): void => {
+    test('skips nullish values', (): void => {
+        expect(new Collection<Product>(products).avg('stock')).toEqual(4);
+    });
+
+    test('returns undefined when nothing is left to average', (): void => {
+        expect(new Collection<number>([]).avg()).toBeUndefined();
+        expect(new Collection<number | null>([null]).avg()).toBeUndefined();
+    });
+
+    test('accepts a callback', (): void => {
+        expect(new Collection<Product>(products).avg((product: Product): number => product.price / 100)).toEqual(4 / 3);
+    });
+});
+
 describe('Collection.before', (): void => {
     test('returns the item preceding the matched value', (): void => {
         expect(new Collection<number>([1, 2, 3]).before(2)).toEqual(1);
@@ -217,6 +242,26 @@ describe('Collection.chunkWhile', (): void => {
 
     test('returns an empty collection when there is nothing to chunk', (): void => {
         expect(new Collection<number>([]).chunkWhile((): boolean => true).all()).toEqual([]);
+    });
+});
+
+describe('Collection.collapse', (): void => {
+    test('collapses nested items renumbering integer keys', (): void => {
+        expect(new Collection<number[]>([[1, 2], [3, 4]]).collapse().all()).toEqual([1, 2, 3, 4]);
+    });
+
+    test('keeps string keys and skips items that hold nothing nested', (): void => {
+        expect(new Collection<unknown>([{ a: 1 }, [2], 3]).collapse().all()).toEqual({ a: 1, 0: 2 });
+    });
+});
+
+describe('Collection.collapseWithKeys', (): void => {
+    test('collapses nested items preserving their keys', (): void => {
+        expect(new Collection<unknown>([{ a: 1 }, { b: 2 }]).collapseWithKeys().all()).toEqual({ a: 1, b: 2 });
+    });
+
+    test('skips items that hold nothing nested', (): void => {
+        expect(new Collection<unknown>(['flat', [1]]).collapseWithKeys().all()).toEqual([1]);
     });
 });
 
@@ -305,6 +350,22 @@ describe('Collection.count', (): void => {
     });
 });
 
+describe('Collection.countBy', (): void => {
+    test('counts the occurrences of each value', (): void => {
+        expect(new Collection<number>([1, 2, 2, 3]).countBy().all()).toEqual({ 1: 1, 2: 2, 3: 1 });
+    });
+
+    test('counts the occurrences of each retrieved value', (): void => {
+        expect(new Collection<Product>(products).countBy('category').all()).toEqual({ office: 2, home: 1 });
+        expect(new Collection<Product>(products).countBy((product: Product): boolean => product.price > 150).all()).toEqual({ 1: 1, 0: 2 });
+    });
+
+    test('folds nullish and object keys into scalars', (): void => {
+        expect(new Collection<unknown>([{ a: null }, { a: undefined }]).countBy('a').all()).toEqual({ '': 2 });
+        expect(new Collection<unknown>([{}, {}]).countBy().all()).toEqual({ '[object Object]': 2 });
+    });
+});
+
 describe('Collection.crossJoin', (): void => {
     test('returns every permutation of the given lists', (): void => {
         expect(new Collection<number>([1, 2]).crossJoin(['a', 'b']).all()).toEqual([[1, 'a'], [1, 'b'], [2, 'a'], [2, 'b']]);
@@ -376,6 +437,19 @@ describe('Collection.doesntContainStrict', (): void => {
         expect(new Collection<unknown>([1, '2']).doesntContainStrict(2)).toEqual(true);
         expect(new Collection<Product>(products).doesntContainStrict('price', '200')).toEqual(true);
         expect(new Collection<Product>(products).doesntContainStrict('price', 200)).toEqual(false);
+    });
+});
+
+describe('Collection.dot', (): void => {
+    test('flattens nested items into dot-notated keys', (): void => {
+        expect(new Collection<unknown>({ user: { name: 'John', roles: ['admin'] } }).dot().all()).toEqual({
+            'user.name'   : 'John',
+            'user.roles.0': 'admin',
+        });
+    });
+
+    test('keeps items that hold nothing nested', (): void => {
+        expect(new Collection<unknown>({ a: 1, b: {} }).dot().all()).toEqual({ a: 1, b: {} });
     });
 });
 
@@ -528,6 +602,23 @@ describe('Collection.firstWhere', (): void => {
     });
 });
 
+describe('Collection.flatMap', (): void => {
+    test('maps the items and collapses the result by one level', (): void => {
+        expect(new Collection<number>([1, 2]).flatMap((value: number): number[] => [value, value * 10]).all()).toEqual([1, 10, 2, 20]);
+    });
+});
+
+describe('Collection.flatten', (): void => {
+    test('flattens every level by default', (): void => {
+        expect(new Collection<unknown>([1, [2, [3, [4]]]]).flatten().all()).toEqual([1, 2, 3, 4]);
+        expect(new Collection<unknown>({ a: { b: 1 }, c: 2 }).flatten().all()).toEqual([1, 2]);
+    });
+
+    test('flattens only the given number of levels', (): void => {
+        expect(new Collection<unknown>([1, [2, [3]]]).flatten(1).all()).toEqual([1, 2, [3]]);
+    });
+});
+
 describe('Collection.flip', (): void => {
     test('swaps keys with values', (): void => {
         expect(new Collection<string>({ name: 'John' }).flip().all()).toEqual({ John: 'name' });
@@ -586,6 +677,28 @@ describe('Collection.getOrPut', (): void => {
     });
 });
 
+describe('Collection.groupBy', (): void => {
+    test('groups the items by the retrieved key', (): void => {
+        const groups: Collection<Collection<Product>> = new Collection<Product>(products).groupBy('category');
+
+        expect(groups.keys().all()).toEqual(['office', 'home']);
+        expect(groups.get('office')?.pluck('name').all()).toEqual(['Desk', 'Chair']);
+    });
+
+    test('groups the items into every returned key', (): void => {
+        const groups: Collection<Collection<string>> = new Collection<string>(['John', 'Jane']).groupBy((value: string): string[] => [value[0] as string, 'all']);
+
+        expect(groups.get('all')?.all()).toEqual(['John', 'Jane']);
+        expect(groups.get('J')?.all()).toEqual(['John', 'Jane']);
+    });
+
+    test('preserves the original keys when asked to', (): void => {
+        const groups: Collection<Collection<Product>> = new Collection<Product>(products).groupBy('category', true);
+
+        expect(groups.get('home')?.all()).toEqual({ 2: products[2] });
+    });
+});
+
 describe('Collection.has', (): void => {
     test('determines whether every given key is present', (): void => {
         const collection: Collection<number> = new Collection<number>({ a: 1, b: 2 });
@@ -601,6 +714,22 @@ describe('Collection.hasAny', (): void => {
 
         expect(collection.hasAny('a', 'c')).toEqual(true);
         expect(collection.hasAny('b', 'c')).toEqual(false);
+    });
+});
+
+describe('Collection.implode', (): void => {
+    test('joins scalar items with the given glue', (): void => {
+        expect(new Collection<number>([1, 2, 3]).implode('-')).toEqual('1-2-3');
+    });
+
+    test('joins the plucked values of object items', (): void => {
+        expect(new Collection<Product>(products).implode('name', ', ')).toEqual('Desk, Chair, Door');
+        expect(new Collection<Product>(products).implode('name')).toEqual('DeskChairDoor');
+    });
+
+    test('joins the results of a callback', (): void => {
+        expect(new Collection<Product>(products).implode((product: Product): string => product.name.toUpperCase(), '|')).toEqual('DESK|CHAIR|DOOR');
+        expect(new Collection<Product>(products).implode((product: Product): string => product.name)).toEqual('DeskChairDoor');
     });
 });
 
@@ -647,6 +776,27 @@ describe('Collection.isNotEmpty', (): void => {
     test('determines whether the collection is not empty', (): void => {
         expect(new Collection<number>([1]).isNotEmpty()).toEqual(true);
         expect(new Collection<number>([]).isNotEmpty()).toEqual(false);
+    });
+});
+
+describe('Collection.join', (): void => {
+    test('joins the values with the given glue', (): void => {
+        expect(new Collection<string>(['a', 'b', 'c']).join(', ')).toEqual('a, b, c');
+        expect(new Collection<unknown>(['a', null, 1]).join('-')).toEqual('a--1');
+    });
+
+    test('uses the final glue before the last value', (): void => {
+        expect(new Collection<string>(['a', 'b', 'c']).join(', ', ' and ')).toEqual('a, b and c');
+        expect(new Collection<string>(['a', 'b']).join(', ', ' and ')).toEqual('a and b');
+        expect(new Collection<string>(['a']).join(', ', ' and ')).toEqual('a');
+        expect(new Collection<string>([]).join(', ', ' and ')).toEqual('');
+    });
+});
+
+describe('Collection.keyBy', (): void => {
+    test('keys the collection by the retrieved value', (): void => {
+        expect(new Collection<Product>(products).keyBy('name').keys().all()).toEqual(['Desk', 'Chair', 'Door']);
+        expect(new Collection<Product>(products).keyBy((product: Product): string => product.category).keys().all()).toEqual(['office', 'home']);
     });
 });
 
@@ -754,6 +904,35 @@ describe('Collection.mapWithKeys', (): void => {
     });
 });
 
+describe('Collection.max', (): void => {
+    test('returns the highest value', (): void => {
+        expect(new Collection<number>([1, 3, 2]).max()).toEqual(3);
+        expect(new Collection<Product>(products).max('price')).toEqual(200);
+        expect(new Collection<string>(['a', 'c', 'b']).max()).toEqual('c');
+    });
+
+    test('skips nullish values and returns undefined when nothing is left', (): void => {
+        expect(new Collection<Product>(products).max('stock')).toEqual(6);
+        expect(new Collection<number>([]).max()).toBeUndefined();
+        expect(new Collection<number | null>([null]).max()).toBeUndefined();
+    });
+});
+
+describe('Collection.median', (): void => {
+    test('returns the middle value for an odd count', (): void => {
+        expect(new Collection<number>([1, 3, 2]).median()).toEqual(2);
+    });
+
+    test('averages the two middle values for an even count', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4]).median()).toEqual(2.5);
+        expect(new Collection<Product>(products).median('price')).toEqual(100);
+    });
+
+    test('returns undefined when nothing is left', (): void => {
+        expect(new Collection<number>([]).median()).toBeUndefined();
+    });
+});
+
 describe('Collection.merge', (): void => {
     test('overwrites string keys and appends integer ones', (): void => {
         expect(new Collection<number>({ a: 1, b: 2 }).merge({ b: 3, c: 4 }).all()).toEqual({ a: 1, b: 3, c: 4 });
@@ -778,6 +957,30 @@ describe('Collection.mergeRecursive', (): void => {
 
     test('renders a merged nested list as an array', (): void => {
         expect(new Collection<unknown>({ tags: { 0: 'a' } }).mergeRecursive({ tags: { 1: 'b' } }).all()).toEqual({ tags: ['a', 'b'] });
+    });
+});
+
+describe('Collection.min', (): void => {
+    test('returns the lowest value', (): void => {
+        expect(new Collection<number>([3, 1, 2]).min()).toEqual(1);
+        expect(new Collection<Product>(products).min('price')).toEqual(100);
+    });
+
+    test('skips nullish values and returns undefined when nothing is left', (): void => {
+        expect(new Collection<Product>(products).min('stock')).toEqual(2);
+        expect(new Collection<number>([]).min()).toBeUndefined();
+    });
+});
+
+describe('Collection.mode', (): void => {
+    test('returns the most frequent values', (): void => {
+        expect(new Collection<number>([1, 1, 2, 4]).mode()).toEqual([1]);
+        expect(new Collection<number>([1, 1, 2, 2]).mode()).toEqual([1, 2]);
+        expect(new Collection<Product>(products).mode('price')).toEqual([100]);
+    });
+
+    test('returns undefined for an empty collection', (): void => {
+        expect(new Collection<number>([]).mode()).toBeUndefined();
     });
 });
 
@@ -839,6 +1042,17 @@ describe('Collection.partition', (): void => {
 
         expect(groups.get(0)?.pluck('name').all()).toEqual(['Desk']);
         expect(groups.get(1)?.count()).toEqual(2);
+    });
+});
+
+describe('Collection.percentage', (): void => {
+    test('returns the percentage of items passing the truth test', (): void => {
+        expect(new Collection<number>([1, 1, 2, 2, 2, 3]).percentage((value: number): boolean => value === 1)).toEqual(33.33);
+        expect(new Collection<number>([1, 1, 2, 2, 2, 3]).percentage((value: number): boolean => value === 1, 0)).toEqual(33);
+    });
+
+    test('returns undefined for an empty collection', (): void => {
+        expect(new Collection<number>([]).percentage((): boolean => true)).toBeUndefined();
     });
 });
 
@@ -1260,6 +1474,19 @@ describe('Collection.splitIn', (): void => {
     });
 });
 
+describe('Collection.sum', (): void => {
+    test('sums the items', (): void => {
+        expect(new Collection<number>([1, 2, 3]).sum()).toEqual(6);
+        expect(new Collection<number>([]).sum()).toEqual(0);
+    });
+
+    test('sums the retrieved values, treating nullish values as zero', (): void => {
+        expect(new Collection<Product>(products).sum('price')).toEqual(400);
+        expect(new Collection<Product>(products).sum('stock')).toEqual(8);
+        expect(new Collection<Product>(products).sum((product: Product): number => product.price * 2)).toEqual(800);
+    });
+});
+
 describe('Collection.take', (): void => {
     test('takes from the front for a positive limit', (): void => {
         expect(new Collection<number>([1, 2, 3]).take(2).values().all()).toEqual([1, 2]);
@@ -1288,12 +1515,68 @@ describe('Collection.takeWhile', (): void => {
     });
 });
 
+describe('Collection.toArray', (): void => {
+    test('converts the collection into a plain array or object', (): void => {
+        expect(new Collection<number>([1, 2]).toArray()).toEqual([1, 2]);
+        expect(new Collection<number>({ a: 1 }).toArray()).toEqual({ a: 1 });
+    });
+
+    test('converts nested collections, maps, and objects recursively', (): void => {
+        const collection: Collection<unknown> = new Collection<unknown>({
+            list  : new Collection<number>([1, 2]),
+            map   : new Map<Key, number>([['a', 1]]),
+            nested: { inner: new Collection<number>([3]) },
+            scalar: 'value',
+        });
+
+        expect(collection.toArray()).toEqual({
+            list  : [1, 2],
+            map   : { a: 1 },
+            nested: { inner: [3] },
+            scalar: 'value',
+        });
+    });
+});
+
+describe('Collection.toJson', (): void => {
+    test('serializes the collection to a JSON string', (): void => {
+        expect(new Collection<number>([1, 2]).toJson()).toEqual('[1,2]');
+        expect(new Collection<unknown>({ a: new Collection<number>([1]) }).toJson()).toEqual('{"a":[1]}');
+    });
+});
+
+describe('Collection.toJSON', (): void => {
+    test('serializes through the native JSON.stringify hook', (): void => {
+        expect(JSON.stringify(new Collection<number>([1, 2]))).toEqual('[1,2]');
+        expect(JSON.stringify(new Collection<number>({ a: 1 }))).toEqual('{"a":1}');
+    });
+});
+
 describe('Collection.transform', (): void => {
     test('maps the items in place', (): void => {
         const collection: Collection<number> = new Collection<number>({ a: 1, b: 2 });
 
         expect(collection.transform((value: number): number => value * 2)).toBe(collection);
         expect(collection.all()).toEqual({ a: 2, b: 4 });
+    });
+});
+
+describe('Collection.undot', (): void => {
+    test('expands dot-notated keys into nested structures', (): void => {
+        expect(new Collection<unknown>({ 'user.name': 'John', 'user.age': 30 }).undot().all()).toEqual({ user: { name: 'John', age: 30 } });
+    });
+
+    test('renders nested sequences as arrays', (): void => {
+        expect(new Collection<unknown>({ 'user.roles.0': 'admin', 'user.roles.1': 'editor' }).undot().all()).toEqual({ user: { roles: ['admin', 'editor'] } });
+        expect(new Collection<unknown>({ '0.name': 'John' }).undot().all()).toEqual([{ name: 'John' }]);
+    });
+
+    test('overwrites a scalar standing where a nested structure is needed', (): void => {
+        expect(new Collection<unknown>({ 'user': 'John', 'user.name': 'Jane' }).undot().all()).toEqual({ user: { name: 'Jane' } });
+    });
+
+    test('keeps keys that carry no dots', (): void => {
+        expect(new Collection<unknown>({ name: 'John' }).undot().all()).toEqual({ name: 'John' });
     });
 });
 

@@ -134,6 +134,35 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the average value of the items or of the retrieved values.
+     */
+    average(key?: Key | Callback<V>): number | undefined {
+        return this.avg(key);
+    }
+
+    /**
+     * Get the average value of the items or of the retrieved values, skipping nulls.
+     */
+    avg(key?: Key | Callback<V>): number | undefined {
+        const retriever: Callback<V> = this.retriever(key);
+        const values: number[] = [];
+
+        for (const [name, value] of this.items) {
+            const retrieved: unknown = retriever(value, name);
+
+            if (retrieved !== null && retrieved !== undefined) {
+                values.push(Number(retrieved));
+            }
+        }
+
+        if (values.length === 0) {
+            return undefined;
+        }
+
+        return values.reduce((carry: number, value: number): number => carry + value, 0) / values.length;
+    }
+
+    /**
      * Get the item that comes right before the first item matching the given value or callback.
      */
     before(value: V | Callback<V, boolean>, strict: boolean = false): V | undefined {
@@ -189,6 +218,38 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return new Collection<Collection<V>>(chunks);
+    }
+
+    /**
+     * Collapse nested items into a single collection, renumbering integer keys.
+     */
+    collapse(): Collection<unknown> {
+        const groups: [Key, unknown][][] = [];
+
+        for (const value of this.items.values()) {
+            if (this.nested(value)) {
+                groups.push(this.parse(value as ItemsInput<unknown>));
+            }
+        }
+
+        return new Collection<unknown>(this.merged(groups));
+    }
+
+    /**
+     * Collapse nested items into a single collection, preserving their keys.
+     */
+    collapseWithKeys(): Collection<unknown> {
+        const collapsed: Map<Key, unknown> = new Map<Key, unknown>();
+
+        for (const value of this.items.values()) {
+            if (this.nested(value)) {
+                for (const [key, entry] of this.parse(value as ItemsInput<unknown>)) {
+                    collapsed.set(key, entry);
+                }
+            }
+        }
+
+        return new Collection<unknown>(collapsed);
     }
 
     /**
@@ -275,6 +336,22 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     count(): number {
         return this.items.size;
+    }
+
+    /**
+     * Count the occurrences of each value, or of each result of the given callback or key.
+     */
+    countBy(callback?: Key | Callback<V>): Collection<number> {
+        const retriever: Callback<V> = this.retriever(callback);
+        const counts: Map<Key, number> = new Map<Key, number>();
+
+        for (const [key, value] of this.items) {
+            const counted: Key = this.scalar(retriever(value, key));
+
+            counts.set(counted, (counts.get(counted) ?? 0) + 1);
+        }
+
+        return new Collection<number>(counts);
     }
 
     /**
@@ -382,6 +459,31 @@ export class Collection<V = unknown> implements Iterable<V> {
             default:
                 return !this.containsStrict(key, value);
         }
+    }
+
+    /**
+     * Flatten the items into a single level, joining nested keys with dots.
+     */
+    dot(): Collection<unknown> {
+        const dotted: Map<Key, unknown> = new Map<Key, unknown>();
+
+        const flatten: (prefix: string, value: unknown) => void = (prefix: string, value: unknown): void => {
+            if (this.nested(value) && this.parse(value as ItemsInput<unknown>).length > 0) {
+                for (const [key, entry] of this.parse(value as ItemsInput<unknown>)) {
+                    flatten(`${prefix}.${String(key)}`, entry);
+                }
+
+                return;
+            }
+
+            dotted.set(this.key(prefix), value);
+        };
+
+        for (const [key, value] of this.items) {
+            flatten(String(key), value);
+        }
+
+        return new Collection<unknown>(dotted);
     }
 
     /**
@@ -533,6 +635,36 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Map the items through the callback and collapse the results by one level.
+     */
+    flatMap<R>(callback: Callback<V, R>): Collection<unknown> {
+        return this.map(callback).collapse();
+    }
+
+    /**
+     * Flatten nested items into values up to the given depth, dropping keys.
+     */
+    flatten(depth: number = Infinity): Collection<unknown> {
+        const flattened: unknown[] = [];
+
+        const walk: (values: unknown[], remaining: number) => void = (values: unknown[], remaining: number): void => {
+            for (const value of values) {
+                if (!this.nested(value)) {
+                    flattened.push(value);
+                } else if (remaining === 1) {
+                    flattened.push(...this.valuesOf(value as ItemsInput<unknown>));
+                } else {
+                    walk(this.valuesOf(value as ItemsInput<unknown>), remaining - 1);
+                }
+            }
+        };
+
+        walk([...this.items.values()], depth);
+
+        return new Collection<unknown>(flattened);
+    }
+
+    /**
      * Swap the keys with their corresponding string or number values.
      */
     flip(): Collection<Key> {
@@ -592,6 +724,29 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Group the items by the given key or callback, optionally preserving keys.
+     */
+    groupBy(grouper: Key | Callback<V>, preserveKeys: boolean = false): Collection<Collection<V>> {
+        const retriever: Callback<V> = this.retriever(grouper);
+        const groups: Map<Key, Map<Key, V>> = new Map<Key, Map<Key, V>>();
+
+        for (const [key, value] of this.items) {
+            const raw: unknown = retriever(value, key);
+            const names: unknown[] = Array.isArray(raw) ? raw : [raw];
+
+            for (const name of names) {
+                const grouped: Key = this.scalar(name);
+                const group: Map<Key, V> = groups.get(grouped) ?? new Map<Key, V>();
+
+                group.set(preserveKeys ? key : group.size, value);
+                groups.set(grouped, group);
+            }
+        }
+
+        return new Collection<Collection<V>>(new Map<Key, Collection<V>>([...groups.entries()].map(([name, group]: [Key, Map<Key, V>]): [Key, Collection<V>] => [name, new Collection<V>(group)])));
+    }
+
+    /**
      * Determine whether all of the given keys are present in the collection.
      */
     has(...keys: Key[]): boolean {
@@ -603,6 +758,23 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     hasAny(...keys: Key[]): boolean {
         return keys.some((key: Key): boolean => this.items.has(this.key(key)));
+    }
+
+    /**
+     * Join the values, plucked values, or callback results into a string.
+     */
+    implode(value: Key | Callback<V>, glue?: string): string {
+        if (typeof value === 'function') {
+            return this.map(value).join(glue ?? '');
+        }
+
+        const first: V | undefined = this.first();
+
+        if (typeof first === 'object' && first !== null) {
+            return this.pluck(value).join(glue ?? '');
+        }
+
+        return this.join(String(value));
     }
 
     /**
@@ -660,6 +832,43 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     isNotEmpty(): boolean {
         return this.items.size > 0;
+    }
+
+    /**
+     * Join the values with the given glue, using the final glue before the last value.
+     */
+    join(glue: string, finalGlue: string = ''): string {
+        if (finalGlue === '') {
+            return [...this.items.values()].map((value: V): string => this.stringify(value)).join(glue);
+        }
+
+        const values: V[] = [...this.items.values()];
+
+        if (values.length === 0) {
+            return '';
+        }
+
+        if (values.length === 1) {
+            return this.stringify(values[0]);
+        }
+
+        const last: V = values.pop() as V;
+
+        return values.map((value: V): string => this.stringify(value)).join(glue) + finalGlue + this.stringify(last);
+    }
+
+    /**
+     * Key the collection by the given key or callback.
+     */
+    keyBy(keyBy: Key | Callback<V>): Collection<V> {
+        const retriever: Callback<V> = this.retriever(keyBy);
+        const keyed: Map<Key, V> = new Map<Key, V>();
+
+        for (const [key, value] of this.items) {
+            keyed.set(this.scalar(retriever(value, key)), value);
+        }
+
+        return new Collection<V>(keyed);
     }
 
     /**
@@ -756,6 +965,32 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the maximum value of the items or of the retrieved values.
+     */
+    max(key?: Key | Callback<V>): unknown {
+        return this.extreme(key, 1);
+    }
+
+    /**
+     * Get the median of the items or of the retrieved values.
+     */
+    median(key?: Key | Callback<V>): number | undefined {
+        const values: number[] = this.numbers(key).sort((a: number, b: number): number => a - b);
+
+        if (values.length === 0) {
+            return undefined;
+        }
+
+        const middle: number = Math.floor(values.length / 2);
+
+        if (values.length % 2 === 1) {
+            return values[middle] as number;
+        }
+
+        return ((values[middle - 1] as number) + (values[middle] as number)) / 2;
+    }
+
+    /**
      * Merge the given items onto the collection, overwriting string keys and appending integer ones.
      */
     merge(items: ItemsInput<V>): Collection<V> {
@@ -767,6 +1002,37 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     mergeRecursive(items: ItemsInput<V>): Collection<V> {
         return new Collection<V>(this.recursive(new Map<Key, unknown>(this.entries()), this.parse(items), true) as Map<Key, V>);
+    }
+
+    /**
+     * Get the minimum value of the items or of the retrieved values.
+     */
+    min(key?: Key | Callback<V>): unknown {
+        return this.extreme(key, -1);
+    }
+
+    /**
+     * Get the values that occur most often among the items or the retrieved values.
+     */
+    mode(key?: Key | Callback<V>): Key[] | undefined {
+        if (this.items.size === 0) {
+            return undefined;
+        }
+
+        const counts: Map<Key, number> = new Map<Key, number>();
+
+        for (const retrieved of this.retrieved(key)) {
+            const name: Key = this.scalar(retrieved);
+
+            counts.set(name, (counts.get(name) ?? 0) + 1);
+        }
+
+        const highest: number = Math.max(...counts.values());
+
+        return [...counts.entries()]
+            .filter(([, count]: [Key, number]): boolean => count === highest)
+            .map(([name]: [Key, number]): Key => name)
+            .sort((a: Key, b: Key): number => this.comparator(a, b));
     }
 
     /**
@@ -841,6 +1107,19 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return new Collection<Collection<V>>([new Collection<V>(new Map<Key, V>(passed)), new Collection<V>(new Map<Key, V>(failed))]);
+    }
+
+    /**
+     * Get the percentage of items passing the given truth test.
+     */
+    percentage(callback: Callback<V, boolean>, precision: number = 2): number | undefined {
+        if (this.items.size === 0) {
+            return undefined;
+        }
+
+        const factor: number = 10 ** precision;
+
+        return Math.round((this.filter(callback).count() / this.items.size) * 100 * factor) / factor;
     }
 
     /**
@@ -1321,6 +1600,13 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the sum of the items or of the retrieved values.
+     */
+    sum(key?: Key | Callback<V>): number {
+        return this.retrieved(key).reduce((carry: number, value: unknown): number => carry + Number(value ?? 0), 0);
+    }
+
+    /**
      * Take the given number of items, taking from the end for a negative limit.
      */
     take(limit: number): Collection<V> {
@@ -1342,6 +1628,27 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Convert the collection and its nested items into plain arrays and objects.
+     */
+    toArray(): unknown[] | Record<string, unknown> {
+        return this.arrayable(this) as unknown[] | Record<string, unknown>;
+    }
+
+    /**
+     * Serialize the collection to a JSON string.
+     */
+    toJson(): string {
+        return JSON.stringify(this.toArray());
+    }
+
+    /**
+     * Serialize the collection to plain data, so JSON.stringify works out of the box.
+     */
+    toJSON(): unknown[] | Record<string, unknown> {
+        return this.toArray();
+    }
+
+    /**
      * Map the items through the callback in place.
      */
     transform(callback: Callback<V, V>): this {
@@ -1350,6 +1657,19 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return this;
+    }
+
+    /**
+     * Expand dot-notated keys back into nested structures.
+     */
+    undot(): Collection<unknown> {
+        const expanded: Record<string, unknown> = {};
+
+        for (const [key, value] of this.items) {
+            this.assign(expanded, String(key).split('.'), value);
+        }
+
+        return new Collection<unknown>(this.listify(expanded) as ItemsInput<unknown>);
     }
 
     /**
@@ -1690,6 +2010,13 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Convert a value to a string for joining, treating nullish values as empty.
+     */
+    protected stringify(value: unknown): string {
+        return this.nullish(value) ? '' : String(value);
+    }
+
+    /**
      * Build a value retriever from a key, a callback, or nothing at all.
      */
     protected retriever(key?: Key | Callback<V>): Callback<V> {
@@ -1896,6 +2223,43 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the retrieved values of every item.
+     */
+    protected retrieved(key?: Key | Callback<V>): unknown[] {
+        const retriever: Callback<V> = this.retriever(key);
+
+        return this.entries().map(([name, value]: [Key, V]): unknown => retriever(value, name));
+    }
+
+    /**
+     * Get the retrieved values of every item as numbers, skipping nullish ones.
+     */
+    protected numbers(key?: Key | Callback<V>): number[] {
+        return this.retrieved(key)
+            .filter((value: unknown): boolean => !this.nullish(value))
+            .map((value: unknown): number => Number(value));
+    }
+
+    /**
+     * Get the highest or lowest retrieved value, skipping nullish ones.
+     */
+    protected extreme(key: Key | Callback<V> | undefined, direction: number): unknown {
+        let found: unknown = undefined;
+
+        for (const retrieved of this.retrieved(key)) {
+            if (this.nullish(retrieved)) {
+                continue;
+            }
+
+            if (found === undefined || this.comparator(retrieved, found) * direction > 0) {
+                found = retrieved;
+            }
+        }
+
+        return found;
+    }
+
+    /**
      * Merge entry groups the way PHP does, renumbering integer keys and overwriting string ones.
      */
     protected merged(groups: [Key, unknown][][]): Map<Key, unknown> {
@@ -1966,6 +2330,66 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return [...entries.values()];
+    }
+
+    /**
+     * Convert a value and everything nested inside it into plain arrays and objects.
+     */
+    protected arrayable(value: unknown): unknown {
+        if (!this.nested(value)) {
+            return value;
+        }
+
+        const converted: Map<Key, unknown> = new Map<Key, unknown>();
+
+        for (const [key, entry] of this.parse(value as ItemsInput<unknown>)) {
+            converted.set(key, this.arrayable(entry));
+        }
+
+        return this.shape(converted);
+    }
+
+    /**
+     * Assign a value at the path described by the given key segments.
+     */
+    protected assign(target: Record<string, unknown>, segments: string[], value: unknown): void {
+        const segment: string = segments[0] as string;
+
+        if (segments.length === 1) {
+            target[segment] = value;
+
+            return;
+        }
+
+        const existing: unknown = target[segment];
+        const nested: Record<string, unknown> = Collection.plain(existing) ? existing as Record<string, unknown> : {};
+
+        target[segment] = nested;
+
+        this.assign(nested, segments.slice(1), value);
+    }
+
+    /**
+     * Convert objects whose keys form a zero-based sequence into arrays, recursively.
+     */
+    protected listify(value: unknown): unknown {
+        if (!Collection.plain(value)) {
+            return value;
+        }
+
+        const record: Record<string, unknown> = value as Record<string, unknown>;
+        const keys: string[] = Object.keys(record);
+        const mapped: Record<string, unknown> = {};
+
+        for (const key of keys) {
+            mapped[key] = this.listify(record[key]);
+        }
+
+        if (keys.length > 0 && keys.every((key: string, index: number): boolean => key === String(index))) {
+            return keys.map((key: string): unknown => mapped[key]);
+        }
+
+        return mapped;
     }
 
     /**
