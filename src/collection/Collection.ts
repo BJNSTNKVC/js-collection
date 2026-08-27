@@ -199,6 +199,35 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Create a collection using the current values as keys and the given values as values.
+     */
+    combine<T>(values: ItemsInput<T>): Collection<T> {
+        const keys: V[] = [...this.items.values()];
+        const combined: T[] = this.valuesOf(values);
+
+        if (keys.length !== combined.length) {
+            throw new RangeError('The number of keys and values must be equal.');
+        }
+
+        const entries: [Key, T][] = keys.map((key: V, index: number): [Key, T] => [this.scalar(key), combined[index] as T]);
+
+        return new Collection<T>(new Map<Key, T>(entries));
+    }
+
+    /**
+     * Append the values of the given items onto the end of the collection.
+     */
+    concat(source: ItemsInput<V>): Collection<V> {
+        const result: Collection<V> = new Collection<V>(this);
+
+        for (const value of this.valuesOf(source)) {
+            result.push(value);
+        }
+
+        return result;
+    }
+
+    /**
      * Determine whether the collection contains the given value, callback match, or key-value condition.
      */
     contains(key: V | Callback<V, boolean> | Key, operator?: unknown, value?: unknown): boolean {
@@ -246,6 +275,87 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     count(): number {
         return this.items.size;
+    }
+
+    /**
+     * Cross join the values with the given lists, returning all possible permutations.
+     */
+    crossJoin(...lists: ItemsInput<unknown>[]): Collection<unknown[]> {
+        let results: unknown[][] = [...this.items.values()].map((value: V): unknown[] => [value]);
+
+        for (const list of lists) {
+            const values: unknown[] = this.valuesOf(list);
+            const appended: unknown[][] = [];
+
+            for (const result of results) {
+                for (const value of values) {
+                    appended.push([...result, value]);
+                }
+            }
+
+            results = appended;
+        }
+
+        return new Collection<unknown[]>(results);
+    }
+
+    /**
+     * Get the items whose values are not present in the given items.
+     */
+    diff(items: ItemsInput<V>): Collection<V> {
+        return this.diffUsing(items, (a: V, b: V): number => this.looseEquals(a, b) ? 0 : 1);
+    }
+
+    /**
+     * Get the items whose key-value pairs are not present in the given items.
+     */
+    diffAssoc(items: ItemsInput<V>): Collection<V> {
+        const others: Map<Key, V> = new Map<Key, V>(this.parse(items));
+        const entries: [Key, V][] = this.entries().filter(([key, value]: [Key, V]): boolean => !others.has(key) || !this.looseEquals(others.get(key), value));
+
+        return new Collection<V>(new Map<Key, V>(entries));
+    }
+
+    /**
+     * Get the items whose key-value pairs are not present in the given items, comparing keys with the callback.
+     */
+    diffAssocUsing(items: ItemsInput<V>, callback: Comparator<Key>): Collection<V> {
+        const others: [Key, V][] = this.parse(items);
+        const entries: [Key, V][] = this.entries().filter(([key, value]: [Key, V]): boolean => {
+            const match: [Key, V] | undefined = others.find(([other]: [Key, V]): boolean => callback(key, other) === 0);
+
+            return match === undefined || !this.looseEquals(match[1], value);
+        });
+
+        return new Collection<V>(new Map<Key, V>(entries));
+    }
+
+    /**
+     * Get the items whose keys are not present in the given items.
+     */
+    diffKeys(items: ItemsInput<unknown>): Collection<V> {
+        const others: Map<Key, unknown> = new Map<Key, unknown>(this.parse(items));
+
+        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => !others.has(key))));
+    }
+
+    /**
+     * Get the items whose keys are not present in the given items, comparing keys with the callback.
+     */
+    diffKeysUsing(items: ItemsInput<unknown>, callback: Comparator<Key>): Collection<V> {
+        const others: [Key, unknown][] = this.parse(items);
+
+        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => !others.some(([other]: [Key, unknown]): boolean => callback(key, other) === 0))));
+    }
+
+    /**
+     * Get the items whose values are not present in the given items, comparing values with the callback.
+     */
+    diffUsing(items: ItemsInput<V>, callback: Comparator<V>): Collection<V> {
+        const others: V[] = this.valuesOf(items);
+        const entries: [Key, V][] = this.entries().filter(([, value]: [Key, V]): boolean => !others.some((other: V): boolean => callback(value, other) === 0));
+
+        return new Collection<V>(new Map<Key, V>(entries));
     }
 
     /**
@@ -496,6 +606,49 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the items whose values are present in the given items.
+     */
+    intersect(items: ItemsInput<V>): Collection<V> {
+        return this.intersectUsing(items, (a: V, b: V): number => this.looseEquals(a, b) ? 0 : 1);
+    }
+
+    /**
+     * Get the items whose key-value pairs are present in the given items.
+     */
+    intersectAssoc(items: ItemsInput<V>): Collection<V> {
+        const others: Map<Key, V> = new Map<Key, V>(this.parse(items));
+
+        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key, value]: [Key, V]): boolean => others.has(key) && this.looseEquals(others.get(key), value))));
+    }
+
+    /**
+     * Get the items whose key-value pairs are present in the given items, comparing keys with the callback.
+     */
+    intersectAssocUsing(items: ItemsInput<V>, callback: Comparator<Key>): Collection<V> {
+        const others: [Key, V][] = this.parse(items);
+
+        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key, value]: [Key, V]): boolean => others.some(([other, item]: [Key, V]): boolean => callback(key, other) === 0 && this.looseEquals(item, value)))));
+    }
+
+    /**
+     * Get the items whose keys are present in the given items.
+     */
+    intersectByKeys(items: ItemsInput<unknown>): Collection<V> {
+        const others: Map<Key, unknown> = new Map<Key, unknown>(this.parse(items));
+
+        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => others.has(key))));
+    }
+
+    /**
+     * Get the items whose values are present in the given items, comparing values with the callback.
+     */
+    intersectUsing(items: ItemsInput<V>, callback: Comparator<V>): Collection<V> {
+        const others: V[] = this.valuesOf(items);
+
+        return new Collection<V>(new Map<Key, V>(this.entries().filter(([, value]: [Key, V]): boolean => others.some((other: V): boolean => callback(value, other) === 0))));
+    }
+
+    /**
      * Determine whether the collection is empty.
      */
     isEmpty(): boolean {
@@ -603,6 +756,33 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Merge the given items onto the collection, overwriting string keys and appending integer ones.
+     */
+    merge(items: ItemsInput<V>): Collection<V> {
+        return new Collection<V>(this.merged([this.entries(), this.parse(items)]) as Map<Key, V>);
+    }
+
+    /**
+     * Recursively merge the given items onto the collection.
+     */
+    mergeRecursive(items: ItemsInput<V>): Collection<V> {
+        return new Collection<V>(this.recursive(new Map<Key, unknown>(this.entries()), this.parse(items), true) as Map<Key, V>);
+    }
+
+    /**
+     * Repeat the values of the collection the given number of times.
+     */
+    multiply(times: number): Collection<V> {
+        const multiplied: Collection<V> = new Collection<V>();
+
+        for (let index: number = 0; index < times; index++) {
+            multiplied.push(...this.items.values());
+        }
+
+        return multiplied;
+    }
+
+    /**
      * Get every n-th item, starting at the given offset.
      */
     nth(step: number, offset: number = 0): Collection<V> {
@@ -627,6 +807,22 @@ export class Collection<V = unknown> implements Iterable<V> {
         const wanted: Key[] = keys.map((key: Key): Key => this.key(key));
 
         return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => wanted.includes(key))));
+    }
+
+    /**
+     * Pad the collection to the given size with the given value, prepending for a negative size.
+     */
+    pad(size: number, value: V): Collection<V> {
+        const values: V[] = [...this.items.values()];
+        const missing: number = Math.abs(size) - values.length;
+
+        if (missing <= 0) {
+            return new Collection<V>(values);
+        }
+
+        const padding: V[] = new Array<V>(missing).fill(value);
+
+        return new Collection<V>(size < 0 ? [...padding, ...values] : [...values, ...padding]);
     }
 
     /**
@@ -815,6 +1011,26 @@ export class Collection<V = unknown> implements Iterable<V> {
         const predicate: Callback<V> = callback ?? ((value: V): unknown => value);
 
         return new Collection<V>(new Map<Key, V>(this.entries().filter(([key, value]: [Key, V]): boolean => !this.truthy(predicate(value, key)))));
+    }
+
+    /**
+     * Replace the items at the keys of the given items.
+     */
+    replace(items: ItemsInput<V>): Collection<V> {
+        const replaced: Map<Key, V> = new Map<Key, V>(this.entries());
+
+        for (const [key, value] of this.parse(items)) {
+            replaced.set(key, value);
+        }
+
+        return new Collection<V>(replaced);
+    }
+
+    /**
+     * Recursively replace the items at the keys of the given items.
+     */
+    replaceRecursive(items: ItemsInput<V>): Collection<V> {
+        return new Collection<V>(this.recursive(new Map<Key, unknown>(this.entries()), this.parse(items), false) as Map<Key, V>);
     }
 
     /**
@@ -1137,6 +1353,21 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Add the items of the given input that are missing from the collection.
+     */
+    union(items: ItemsInput<V>): Collection<V> {
+        const united: Map<Key, V> = new Map<Key, V>(this.entries());
+
+        for (const [key, value] of this.parse(items)) {
+            if (!united.has(key)) {
+                united.set(key, value);
+            }
+        }
+
+        return new Collection<V>(united);
+    }
+
+    /**
      * Get the items with duplicate values removed.
      */
     unique(key?: Key | Callback<V>, strict: boolean = false): Collection<V> {
@@ -1267,6 +1498,21 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     whereStrict(key: Key, value: unknown): Collection<V> {
         return this.where(key, '===', value);
+    }
+
+    /**
+     * Zip the collection together with the given lists, index by index.
+     */
+    zip(...lists: ItemsInput<unknown>[]): Collection<Collection<unknown>> {
+        const sources: unknown[][] = [[...this.items.values()], ...lists.map((list: ItemsInput<unknown>): unknown[] => this.valuesOf(list))];
+        const length: number = Math.max(...sources.map((source: unknown[]): number => source.length));
+        const zipped: Collection<unknown>[] = [];
+
+        for (let index: number = 0; index < length; index++) {
+            zipped.push(new Collection<unknown>(sources.map((source: unknown[]): unknown => index < source.length ? source[index] : null)));
+        }
+
+        return new Collection<Collection<unknown>>(zipped);
     }
 
     /**
@@ -1647,6 +1893,79 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return (target as Record<string, unknown>)[segment];
+    }
+
+    /**
+     * Merge entry groups the way PHP does, renumbering integer keys and overwriting string ones.
+     */
+    protected merged(groups: [Key, unknown][][]): Map<Key, unknown> {
+        const merged: Map<Key, unknown> = new Map<Key, unknown>();
+        let index: number = 0;
+
+        for (const group of groups) {
+            for (const [key, value] of group) {
+                if (typeof key === 'number') {
+                    merged.set(index++, value);
+                } else {
+                    merged.set(key, value);
+                }
+            }
+        }
+
+        return merged;
+    }
+
+    /**
+     * Merge or replace entries recursively, descending into nested items on both sides.
+     */
+    protected recursive(base: Map<Key, unknown>, additions: [Key, unknown][], combine: boolean): Map<Key, unknown> {
+        const merged: Map<Key, unknown> = new Map<Key, unknown>(base);
+
+        for (const [key, value] of additions) {
+            if (combine && typeof key === 'number') {
+                merged.set(this.next(merged), value);
+
+                continue;
+            }
+
+            if (!merged.has(key)) {
+                merged.set(key, value);
+
+                continue;
+            }
+
+            const existing: unknown = merged.get(key);
+
+            if (this.nested(existing) && this.nested(value)) {
+                const nested: Map<Key, unknown> = this.recursive(new Map<Key, unknown>(this.parse(existing as ItemsInput<unknown>)), this.parse(value as ItemsInput<unknown>), combine);
+
+                merged.set(key, this.shape(nested));
+            } else if (combine) {
+                // PHP's recursive merge keeps both sides of a duplicate string key by
+                // collecting the scalar values into a single list rather than letting
+                // the later value overwrite the earlier one.
+                merged.set(key, [...this.spread(existing), ...this.spread(value)]);
+            } else {
+                merged.set(key, value);
+            }
+        }
+
+        return merged;
+    }
+
+    /**
+     * Render entries as an array for a list of keys and as a plain object otherwise.
+     */
+    protected shape(entries: Map<Key, unknown>): unknown {
+        let index: number = 0;
+
+        for (const key of entries.keys()) {
+            if (key !== index++) {
+                return Object.fromEntries(entries);
+            }
+        }
+
+        return [...entries.values()];
     }
 
     /**

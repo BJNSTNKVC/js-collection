@@ -230,6 +230,23 @@ describe('Collection.collect', (): void => {
     });
 });
 
+describe('Collection.combine', (): void => {
+    test('uses the current values as keys for the given values', (): void => {
+        expect(new Collection<string>(['name', 'age']).combine(['John', 30]).all()).toEqual({ name: 'John', age: 30 });
+    });
+
+    test('throws when the number of keys and values differ', (): void => {
+        expect((): unknown => new Collection<string>(['a']).combine([1, 2])).toThrow(RangeError);
+    });
+});
+
+describe('Collection.concat', (): void => {
+    test('appends the values of the given items', (): void => {
+        expect(new Collection<number>([1]).concat([2, 3]).all()).toEqual([1, 2, 3]);
+        expect(new Collection<number>({ a: 1 }).concat({ b: 2 }).all()).toEqual({ a: 1, 0: 2 });
+    });
+});
+
 describe('Collection.contains', (): void => {
     test('matches a value loosely', (): void => {
         expect(new Collection<unknown>([1, 2]).contains('2')).toEqual(true);
@@ -285,6 +302,61 @@ describe('Collection.count', (): void => {
     test('counts the items', (): void => {
         expect(new Collection<number>([1, 2]).count()).toEqual(2);
         expect(new Collection<number>([]).count()).toEqual(0);
+    });
+});
+
+describe('Collection.crossJoin', (): void => {
+    test('returns every permutation of the given lists', (): void => {
+        expect(new Collection<number>([1, 2]).crossJoin(['a', 'b']).all()).toEqual([[1, 'a'], [1, 'b'], [2, 'a'], [2, 'b']]);
+    });
+
+    test('returns single-value permutations when no list is given', (): void => {
+        expect(new Collection<number>([1, 2]).crossJoin().all()).toEqual([[1], [2]]);
+    });
+});
+
+describe('Collection.diff', (): void => {
+    test('returns the items whose values are absent from the given items', (): void => {
+        expect(new Collection<number>([1, 2, 3]).diff([2]).all()).toEqual({ 0: 1, 2: 3 });
+    });
+});
+
+describe('Collection.diffAssoc', (): void => {
+    test('compares both keys and values', (): void => {
+        expect(new Collection<number>({ a: 1, b: 2 }).diffAssoc({ a: 1, b: 3 }).all()).toEqual({ b: 2 });
+        expect(new Collection<number>({ a: 1 }).diffAssoc({ b: 1 }).all()).toEqual({ a: 1 });
+    });
+});
+
+describe('Collection.diffAssocUsing', (): void => {
+    test('compares keys with the given comparator', (): void => {
+        const collection: Collection<number> = new Collection<number>({ a: 1, b: 2 });
+        const comparator: (a: Key, b: Key) => number = (a: Key, b: Key): number => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+
+        expect(collection.diffAssocUsing({ A: 1, B: 3 }, comparator).all()).toEqual({ b: 2 });
+        expect(collection.diffAssocUsing({ C: 1 }, comparator).all()).toEqual({ a: 1, b: 2 });
+    });
+});
+
+describe('Collection.diffKeys', (): void => {
+    test('returns the items whose keys are absent from the given items', (): void => {
+        expect(new Collection<number>({ a: 1, b: 2 }).diffKeys({ a: 9 }).all()).toEqual({ b: 2 });
+    });
+});
+
+describe('Collection.diffKeysUsing', (): void => {
+    test('compares keys with the given comparator', (): void => {
+        const comparator: (a: Key, b: Key) => number = (a: Key, b: Key): number => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+
+        expect(new Collection<number>({ a: 1, b: 2 }).diffKeysUsing({ A: 9 }, comparator).all()).toEqual({ b: 2 });
+    });
+});
+
+describe('Collection.diffUsing', (): void => {
+    test('compares values with the given comparator', (): void => {
+        const collection: Collection<string> = new Collection<string>(['Desk', 'Chair']);
+
+        expect(collection.diffUsing(['desk'], (a: string, b: string): number => a.toLowerCase().localeCompare(b.toLowerCase())).all()).toEqual({ 1: 'Chair' });
     });
 });
 
@@ -532,6 +604,38 @@ describe('Collection.hasAny', (): void => {
     });
 });
 
+describe('Collection.intersect', (): void => {
+    test('returns the items whose values are present in the given items', (): void => {
+        expect(new Collection<number>([1, 2, 3]).intersect([2, 3, 4]).all()).toEqual({ 1: 2, 2: 3 });
+    });
+});
+
+describe('Collection.intersectAssoc', (): void => {
+    test('compares both keys and values', (): void => {
+        expect(new Collection<number>({ a: 1, b: 2 }).intersectAssoc({ a: 1, b: 3 }).all()).toEqual({ a: 1 });
+    });
+});
+
+describe('Collection.intersectAssocUsing', (): void => {
+    test('compares keys with the given comparator', (): void => {
+        const comparator: (a: Key, b: Key) => number = (a: Key, b: Key): number => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+
+        expect(new Collection<number>({ a: 1, b: 2 }).intersectAssocUsing({ A: 1, B: 3 }, comparator).all()).toEqual({ a: 1 });
+    });
+});
+
+describe('Collection.intersectByKeys', (): void => {
+    test('returns the items whose keys are present in the given items', (): void => {
+        expect(new Collection<number>({ a: 1, b: 2 }).intersectByKeys({ a: 9 }).all()).toEqual({ a: 1 });
+    });
+});
+
+describe('Collection.intersectUsing', (): void => {
+    test('compares values with the given comparator', (): void => {
+        expect(new Collection<string>(['Desk', 'Chair']).intersectUsing(['desk'], (a: string, b: string): number => a.toLowerCase().localeCompare(b.toLowerCase())).all()).toEqual(['Desk']);
+    });
+});
+
 describe('Collection.isEmpty', (): void => {
     test('determines whether the collection is empty', (): void => {
         expect(new Collection<number>([]).isEmpty()).toEqual(true);
@@ -650,6 +754,40 @@ describe('Collection.mapWithKeys', (): void => {
     });
 });
 
+describe('Collection.merge', (): void => {
+    test('overwrites string keys and appends integer ones', (): void => {
+        expect(new Collection<number>({ a: 1, b: 2 }).merge({ b: 3, c: 4 }).all()).toEqual({ a: 1, b: 3, c: 4 });
+        expect(new Collection<number>([1, 2]).merge([3]).all()).toEqual([1, 2, 3]);
+    });
+});
+
+describe('Collection.mergeRecursive', (): void => {
+    test('descends into nested items on both sides', (): void => {
+        expect(new Collection<unknown>({ user: { name: 'John' } }).mergeRecursive({ user: { age: 30 } }).all()).toEqual({ user: { name: 'John', age: 30 } });
+    });
+
+    test('collects both sides of a duplicate scalar key into a list', (): void => {
+        expect(new Collection<unknown>({ id: 1 }).mergeRecursive({ id: 2 }).all()).toEqual({ id: [1, 2] });
+        expect(new Collection<unknown>({ id: [1] }).mergeRecursive({ id: 2 }).all()).toEqual({ id: [1, 2] });
+    });
+
+    test('appends integer keys and adds missing ones', (): void => {
+        expect(new Collection<number>([1]).mergeRecursive([2]).all()).toEqual([1, 2]);
+        expect(new Collection<unknown>({ a: 1 }).mergeRecursive({ b: 2 }).all()).toEqual({ a: 1, b: 2 });
+    });
+
+    test('renders a merged nested list as an array', (): void => {
+        expect(new Collection<unknown>({ tags: { 0: 'a' } }).mergeRecursive({ tags: { 1: 'b' } }).all()).toEqual({ tags: ['a', 'b'] });
+    });
+});
+
+describe('Collection.multiply', (): void => {
+    test('repeats the values the given number of times', (): void => {
+        expect(new Collection<number>([1, 2]).multiply(3).all()).toEqual([1, 2, 1, 2, 1, 2]);
+        expect(new Collection<number>([1]).multiply(0).all()).toEqual([]);
+    });
+});
+
 describe('Collection.nth', (): void => {
     test('returns every n-th item', (): void => {
         expect(new Collection<string>(['a', 'b', 'c', 'd', 'e', 'f']).nth(4).all()).toEqual(['a', 'e']);
@@ -664,6 +802,20 @@ describe('Collection.only', (): void => {
     test('returns only the items with the given keys', (): void => {
         expect(new Collection<number>({ a: 1, b: 2, c: 3 }).only('a', 'c').all()).toEqual({ a: 1, c: 3 });
         expect(new Collection<number>([1, 2, 3]).only('0', 1).all()).toEqual([1, 2]);
+    });
+});
+
+describe('Collection.pad', (): void => {
+    test('pads to the right for a positive size', (): void => {
+        expect(new Collection<number>([1, 2]).pad(4, 0).all()).toEqual([1, 2, 0, 0]);
+    });
+
+    test('pads to the left for a negative size', (): void => {
+        expect(new Collection<number>([1, 2]).pad(-4, 0).all()).toEqual([0, 0, 1, 2]);
+    });
+
+    test('returns the values as given when no padding is needed', (): void => {
+        expect(new Collection<number>({ a: 1, b: 2 }).pad(2, 0).all()).toEqual([1, 2]);
     });
 });
 
@@ -810,6 +962,27 @@ describe('Collection.reject', (): void => {
 
     test('drops the truthy items when no callback is given', (): void => {
         expect(new Collection<unknown>([1, null, 0, 'a']).reject().values().all()).toEqual([null, 0]);
+    });
+});
+
+describe('Collection.replace', (): void => {
+    test('replaces the items at the keys of the given items', (): void => {
+        expect(new Collection<string>(['a', 'b', 'c']).replace({ 1: 'x' }).all()).toEqual(['a', 'x', 'c']);
+        expect(new Collection<string>({ a: '1' }).replace({ b: '2' }).all()).toEqual({ a: '1', b: '2' });
+    });
+});
+
+describe('Collection.replaceRecursive', (): void => {
+    test('descends into nested items on both sides', (): void => {
+        expect(new Collection<unknown>({ user: { name: 'John', age: 30 } }).replaceRecursive({ user: { name: 'Jane' } }).all()).toEqual({ user: { name: 'Jane', age: 30 } });
+    });
+
+    test('overwrites a scalar and adds missing keys', (): void => {
+        expect(new Collection<unknown>({ a: 1 }).replaceRecursive({ a: 2, b: 3 }).all()).toEqual({ a: 2, b: 3 });
+    });
+
+    test('renders a replaced nested list as an array', (): void => {
+        expect(new Collection<unknown>({ tags: ['a', 'b'] }).replaceRecursive({ tags: ['x'] }).all()).toEqual({ tags: ['x', 'b'] });
     });
 });
 
@@ -1124,6 +1297,13 @@ describe('Collection.transform', (): void => {
     });
 });
 
+describe('Collection.union', (): void => {
+    test('adds the items missing from the collection, keeping existing keys', (): void => {
+        expect(new Collection<number>({ a: 1 }).union({ a: 9, b: 2 }).all()).toEqual({ a: 1, b: 2 });
+        expect(new Collection<number>([1]).union([9, 2]).all()).toEqual([1, 2]);
+    });
+});
+
 describe('Collection.unique', (): void => {
     test('removes duplicate values loosely', (): void => {
         expect(new Collection<unknown>([1, '1', 2]).unique().values().all()).toEqual([1, 2]);
@@ -1260,6 +1440,20 @@ describe('Collection.whereStrict', (): void => {
     test('filters by a strictly compared key-value pair', (): void => {
         expect(new Collection<Product>(products).whereStrict('price', 100).count()).toEqual(2);
         expect(new Collection<Product>(products).whereStrict('price', '100').count()).toEqual(0);
+    });
+});
+
+describe('Collection.zip', (): void => {
+    test('zips the collection with the given lists index by index', (): void => {
+        expect(new Collection<number>([1, 2]).zip(['a', 'b']).map((group: Collection<unknown>): unknown => group.all()).all()).toEqual([[1, 'a'], [2, 'b']]);
+    });
+
+    test('pads shorter lists with null', (): void => {
+        expect(new Collection<number>([1, 2]).zip(['a']).map((group: Collection<unknown>): unknown => group.all()).all()).toEqual([[1, 'a'], [2, null]]);
+    });
+
+    test('zips nothing when no list is given', (): void => {
+        expect(new Collection<number>([1]).zip().map((group: Collection<unknown>): unknown => group.all()).all()).toEqual([[1]]);
     });
 });
 
