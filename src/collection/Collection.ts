@@ -1,3 +1,4 @@
+import { ItemNotFoundException, MultipleItemsFoundException } from './exceptions';
 import type { Callback, Constructor, ItemsInput, Key, Operator, Primitive } from './types';
 
 // A sentinel telling an absent value apart from a stored undefined, which is what
@@ -273,6 +274,24 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Throw when any item is not of the given primitive types or class instances.
+     */
+    ensure(type: Primitive | Constructor | (Primitive | Constructor)[]): this {
+        const allowed: (Primitive | Constructor)[] = Array.isArray(type) ? type : [type];
+        const names: string = allowed.map((entry: Primitive | Constructor): string => typeof entry === 'function' ? entry.name : entry).join(', ');
+
+        for (const [key, value] of this.items) {
+            const passes: boolean = allowed.some((entry: Primitive | Constructor): boolean => typeof entry === 'function' ? value instanceof entry : this.typeOf(value) === entry);
+
+            if (!passes) {
+                throw new TypeError(`Collection should only include [${names}] items, but [${this.typeOf(value)}] found at key [${key}].`);
+            }
+        }
+
+        return this;
+    }
+
+    /**
      * Determine whether all items pass the given callback, truth test, or key-value condition.
      */
     every(key: Key | Callback<V>, operator?: unknown, value?: unknown): boolean {
@@ -321,6 +340,27 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return this.resolve(fallback);
+    }
+
+    /**
+     * Get the first item passing the callback or key-value condition, throwing when none match.
+     */
+    firstOrFail(key?: Key | Callback<V>, operator?: unknown, value?: unknown): V {
+        let predicate: Callback<V> | undefined = undefined;
+
+        if (arguments.length === 1) {
+            predicate = key as Callback<V>;
+        } else if (arguments.length > 1) {
+            predicate = this.condition(key as Key, operator, value, arguments.length);
+        }
+
+        for (const [name, item] of this.items) {
+            if (predicate === undefined || this.truthy(predicate(item, name))) {
+                return item;
+            }
+        }
+
+        throw new ItemNotFoundException();
     }
 
     /**
@@ -594,6 +634,31 @@ export class Collection<V = unknown> implements Iterable<V> {
 
             return selected;
         });
+    }
+
+    /**
+     * Get the sole item, or the sole item matching the truth test, throwing otherwise.
+     */
+    sole(key?: Key | Callback<V>, operator?: unknown, value?: unknown): V {
+        let filtered: Collection<V> = this;
+
+        if (arguments.length === 1) {
+            filtered = this.filter(this.retriever(key));
+        } else if (arguments.length > 1) {
+            filtered = this.filter(this.condition(key as Key, operator, value, arguments.length));
+        }
+
+        const count: number = filtered.count();
+
+        if (count === 0) {
+            throw new ItemNotFoundException();
+        }
+
+        if (count > 1) {
+            throw new MultipleItemsFoundException(count);
+        }
+
+        return filtered.first() as V;
     }
 
     /**

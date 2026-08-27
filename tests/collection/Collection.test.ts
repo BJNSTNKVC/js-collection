@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { Collection, type Key } from '../../src/main';
+import { Collection, ItemNotFoundException, MultipleItemsFoundException, type Key } from '../../src/main';
 
 interface Product {
     name: string;
@@ -316,6 +316,28 @@ describe('Collection.eachSpread', (): void => {
     });
 });
 
+describe('Collection.ensure', (): void => {
+    class Person {
+    }
+
+    test('passes when every item matches a primitive type', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2]);
+
+        expect(collection.ensure('number')).toBe(collection);
+        expect(new Collection<unknown>([1, 'a']).ensure(['number', 'string'])).toBeInstanceOf(Collection);
+        expect(new Collection<unknown>([null, [1]]).ensure(['null', 'array'])).toBeInstanceOf(Collection);
+    });
+
+    test('passes when every item is an instance of the given class', (): void => {
+        expect(new Collection<Person>([new Person()]).ensure(Person)).toBeInstanceOf(Collection);
+    });
+
+    test('throws on the first item of another type', (): void => {
+        expect((): unknown => new Collection<unknown>([1, 'a']).ensure('number')).toThrow('Collection should only include [number] items, but [string] found at key [1].');
+        expect((): unknown => new Collection<unknown>([{}]).ensure(Person)).toThrow(TypeError);
+    });
+});
+
 describe('Collection.every', (): void => {
     test('determines whether every item passes the callback', (): void => {
         expect(new Collection<number>([2, 4]).every((value: number): boolean => value % 2 === 0)).toEqual(true);
@@ -365,6 +387,22 @@ describe('Collection.first', (): void => {
         expect(new Collection<number>([1]).first((value: number): boolean => value > 1, 0)).toEqual(0);
         expect(new Collection<number>([1]).first(undefined, 0)).toEqual(1);
         expect(new Collection<number>([]).first(undefined, (): number => 9)).toEqual(9);
+    });
+});
+
+describe('Collection.firstOrFail', (): void => {
+    test('returns the first item, optionally matching a callback or condition', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(collection.firstOrFail().name).toEqual('Desk');
+        expect(collection.firstOrFail((product: Product): boolean => product.price === 100).name).toEqual('Chair');
+        expect(collection.firstOrFail('category', 'home').name).toEqual('Door');
+        expect(collection.firstOrFail('price', '<', 150).name).toEqual('Chair');
+    });
+
+    test('throws when nothing matches', (): void => {
+        expect((): unknown => new Collection<number>([]).firstOrFail()).toThrow(ItemNotFoundException);
+        expect((): unknown => new Collection<Product>(products).firstOrFail('name', 'Sofa')).toThrow('Item not found.');
     });
 });
 
@@ -630,6 +668,30 @@ describe('Collection.select', (): void => {
 
     test('skips the keys an item does not carry', (): void => {
         expect(new Collection<unknown>([{ name: 'Desk' }]).select('name', 'missing').all()).toEqual([{ name: 'Desk' }]);
+    });
+});
+
+describe('Collection.sole', (): void => {
+    test('returns the sole item', (): void => {
+        expect(new Collection<number>([1]).sole()).toEqual(1);
+    });
+
+    test('returns the sole item matching a callback or condition', (): void => {
+        const collection: Collection<Product> = new Collection<Product>(products);
+
+        expect(collection.sole((product: Product): boolean => product.price === 200).name).toEqual('Desk');
+        expect(collection.sole('category', 'home').name).toEqual('Door');
+        expect(collection.sole('price', '>', 150).name).toEqual('Desk');
+    });
+
+    test('throws when nothing matches', (): void => {
+        expect((): unknown => new Collection<number>([]).sole()).toThrow(ItemNotFoundException);
+        expect((): unknown => new Collection<Product>(products).sole('name', 'Sofa')).toThrow(ItemNotFoundException);
+    });
+
+    test('throws when more than one item matches', (): void => {
+        expect((): unknown => new Collection<Product>(products).sole('price', 100)).toThrow(MultipleItemsFoundException);
+        expect((): unknown => new Collection<number>([1, 2]).sole()).toThrow('2 items were found.');
     });
 });
 
