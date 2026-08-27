@@ -1056,6 +1056,47 @@ describe('Collection.percentage', (): void => {
     });
 });
 
+describe('Collection.pipe', (): void => {
+    test('passes the collection to the callback and returns its result', (): void => {
+        expect(new Collection<number>([1, 2]).pipe((collection: Collection<number>): number => collection.sum())).toEqual(3);
+    });
+});
+
+describe('Collection.pipeInto', (): void => {
+    class Report {
+        /**
+         * The collection the report was built from.
+         */
+        collection: Collection<number>;
+
+        /**
+         * Create a new report over the given collection.
+         */
+        constructor(collection: Collection<number>) {
+            this.collection = collection;
+        }
+    }
+
+    test('passes the collection into a new instance of the given class', (): void => {
+        const collection: Collection<number> = new Collection<number>([1]);
+        const report: Report = collection.pipeInto(Report);
+
+        expect(report).toBeInstanceOf(Report);
+        expect(report.collection).toBe(collection);
+    });
+});
+
+describe('Collection.pipeThrough', (): void => {
+    test('passes the collection through the callbacks in order', (): void => {
+        const result: unknown = new Collection<number>([1, 2, 3]).pipeThrough([
+            (carry: unknown): unknown => (carry as Collection<number>).filter((value: number): boolean => value > 1),
+            (carry: unknown): unknown => (carry as Collection<number>).sum(),
+        ]);
+
+        expect(result).toEqual(5);
+    });
+});
+
 describe('Collection.pluck', (): void => {
     test('returns the values of the given key', (): void => {
         expect(new Collection<Product>(products).pluck('name').all()).toEqual(['Desk', 'Chair', 'Door']);
@@ -1515,6 +1556,16 @@ describe('Collection.takeWhile', (): void => {
     });
 });
 
+describe('Collection.tap', (): void => {
+    test('passes the collection to the callback and returns the collection', (): void => {
+        const collection: Collection<number> = new Collection<number>([1]);
+        let seen: Collection<number> | undefined = undefined;
+
+        expect(collection.tap((tapped: Collection<number>): void => void (seen = tapped))).toBe(collection);
+        expect(seen).toBe(collection);
+    });
+});
+
 describe('Collection.toArray', (): void => {
     test('converts the collection into a plain array or object', (): void => {
         expect(new Collection<number>([1, 2]).toArray()).toEqual([1, 2]);
@@ -1605,6 +1656,37 @@ describe('Collection.uniqueStrict', (): void => {
     });
 });
 
+describe('Collection.unless', (): void => {
+    test('calls the callback when the condition is falsy', (): void => {
+        expect(new Collection<number>([1]).unless(false, (collection: Collection<number>): number => collection.count())).toEqual(1);
+    });
+
+    test('returns the collection or the fallback when the condition is truthy', (): void => {
+        const collection: Collection<number> = new Collection<number>([1]);
+
+        expect(collection.unless(true, (): number => 9)).toBe(collection);
+        expect(collection.unless(true, (): number => 9, (): number => 0)).toEqual(0);
+    });
+
+    test('resolves a condition given as a callback', (): void => {
+        expect(new Collection<number>([1]).unless((collection: Collection<number>): boolean => collection.isEmpty(), (): number => 9)).toEqual(9);
+    });
+});
+
+describe('Collection.unlessEmpty', (): void => {
+    test('calls the callback when the collection is not empty', (): void => {
+        expect(new Collection<number>([1]).unlessEmpty((collection: Collection<number>): number => collection.count())).toEqual(1);
+        expect(new Collection<number>([]).unlessEmpty((): number => 9, (): number => 0)).toEqual(0);
+    });
+});
+
+describe('Collection.unlessNotEmpty', (): void => {
+    test('calls the callback when the collection is empty', (): void => {
+        expect(new Collection<number>([]).unlessNotEmpty((): number => 9)).toEqual(9);
+        expect(new Collection<number>([1]).unlessNotEmpty((): number => 9, (): number => 0)).toEqual(0);
+    });
+});
+
 describe('Collection.value', (): void => {
     test('returns the value of the key from the first item holding it', (): void => {
         expect(new Collection<Product>(products).value('name')).toEqual('Desk');
@@ -1621,6 +1703,37 @@ describe('Collection.value', (): void => {
 describe('Collection.values', (): void => {
     test('renumbers the keys', (): void => {
         expect(new Collection<number>({ a: 1, b: 2 }).values().all()).toEqual([1, 2]);
+    });
+});
+
+describe('Collection.when', (): void => {
+    test('calls the callback when the condition is truthy', (): void => {
+        expect(new Collection<number>([1]).when(true, (collection: Collection<number>): number => collection.count())).toEqual(1);
+    });
+
+    test('returns the collection or the fallback when the condition is falsy', (): void => {
+        const collection: Collection<number> = new Collection<number>([1]);
+
+        expect(collection.when(false, (): number => 9)).toBe(collection);
+        expect(collection.when(false, (): number => 9, (): number => 0)).toEqual(0);
+    });
+
+    test('resolves a condition given as a callback', (): void => {
+        expect(new Collection<number>([1]).when((collection: Collection<number>): boolean => collection.isNotEmpty(), (): number => 9)).toEqual(9);
+    });
+});
+
+describe('Collection.whenEmpty', (): void => {
+    test('calls the callback when the collection is empty', (): void => {
+        expect(new Collection<number>([]).whenEmpty((): number => 9)).toEqual(9);
+        expect(new Collection<number>([1]).whenEmpty((): number => 9, (): number => 0)).toEqual(0);
+    });
+});
+
+describe('Collection.whenNotEmpty', (): void => {
+    test('calls the callback when the collection is not empty', (): void => {
+        expect(new Collection<number>([1]).whenNotEmpty((collection: Collection<number>): number => collection.count())).toEqual(1);
+        expect(new Collection<number>([]).whenNotEmpty((): number => 9, (): number => 0)).toEqual(0);
     });
 });
 

@@ -1123,6 +1123,27 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Pass the collection to the given callback and return its result.
+     */
+    pipe<R>(callback: (collection: this) => R): R {
+        return callback(this);
+    }
+
+    /**
+     * Pass the collection into a new instance of the given class.
+     */
+    pipeInto<T>(type: new (collection: this) => T): T {
+        return new type(this);
+    }
+
+    /**
+     * Pass the collection through the given callbacks in order.
+     */
+    pipeThrough(callbacks: ((carry: unknown) => unknown)[]): unknown {
+        return callbacks.reduce((carry: unknown, callback: (carry: unknown) => unknown): unknown => callback(carry), this as unknown);
+    }
+
+    /**
      * Get the values of the given key from every item, optionally keyed by another key.
      */
     pluck(value: Key, key?: Key): Collection<unknown> {
@@ -1628,6 +1649,15 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Pass the collection to the given callback and return the collection.
+     */
+    tap(callback: (collection: this) => unknown): this {
+        callback(this);
+
+        return this;
+    }
+
+    /**
      * Convert the collection and its nested items into plain arrays and objects.
      */
     toArray(): unknown[] | Record<string, unknown> {
@@ -1720,6 +1750,27 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Call the callback unless the given condition is truthy.
+     */
+    unless<R>(condition: unknown, callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
+        return this.when(!this.truthy(typeof condition === 'function' ? (condition as (collection: this) => unknown)(this) : condition), callback, fallback);
+    }
+
+    /**
+     * Call the callback unless the collection is empty.
+     */
+    unlessEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
+        return this.whenNotEmpty(callback, fallback);
+    }
+
+    /**
+     * Call the callback unless the collection is not empty.
+     */
+    unlessNotEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
+        return this.whenEmpty(callback, fallback);
+    }
+
+    /**
      * Get the value of the given key from the first item holding it.
      */
     value(key: Key): unknown;
@@ -1735,6 +1786,33 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     values(): Collection<V> {
         return new Collection<V>([...this.items.values()]);
+    }
+
+    /**
+     * Call the callback when the given condition is truthy.
+     */
+    when<R>(condition: unknown, callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
+        const passes: boolean = this.truthy(typeof condition === 'function' ? (condition as (collection: this) => unknown)(this) : condition);
+
+        if (passes) {
+            return callback(this);
+        }
+
+        return fallback === undefined ? this : fallback(this);
+    }
+
+    /**
+     * Call the callback when the collection is empty.
+     */
+    whenEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
+        return this.when(this.isEmpty(), callback, fallback);
+    }
+
+    /**
+     * Call the callback when the collection is not empty.
+     */
+    whenNotEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
+        return this.when(this.isNotEmpty(), callback, fallback);
     }
 
     /**
