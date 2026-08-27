@@ -101,6 +101,15 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Append an item to the collection under the next integer key.
+     */
+    add(item: V): this {
+        this.items.set(this.next(), item);
+
+        return this;
+    }
+
+    /**
      * Get the item that comes right after the first item matching the given value or callback.
      */
     after(value: V | Callback<V, boolean>, strict: boolean = false): V | undefined {
@@ -460,6 +469,19 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the item at the given key, storing and returning the given value when missing.
+     */
+    getOrPut(key: Key, value: V | (() => V)): V {
+        const name: Key = this.key(key);
+
+        if (!this.items.has(name)) {
+            this.items.set(name, this.resolve(value));
+        }
+
+        return this.items.get(name) as V;
+    }
+
+    /**
      * Determine whether all of the given keys are present in the collection.
      */
     has(...keys: Key[]): boolean {
@@ -643,6 +665,96 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Remove and return the last item, or the last given number of items.
+     */
+    pop(): V | undefined;
+    pop(count: number): Collection<V>;
+    pop(count?: number): V | Collection<V> | undefined {
+        const entries: [Key, V][] = this.entries();
+
+        if (count === undefined) {
+            const last: [Key, V] | undefined = entries[entries.length - 1];
+
+            if (last === undefined) {
+                return undefined;
+            }
+
+            this.items.delete(last[0]);
+
+            return last[1];
+        }
+
+        const removed: [Key, V][] = entries.slice(Math.max(0, entries.length - count)).reverse();
+
+        for (const [key] of removed) {
+            this.items.delete(key);
+        }
+
+        return new Collection<V>(removed.map(([, value]: [Key, V]): V => value));
+    }
+
+    /**
+     * Prepend an item to the front of the collection, optionally under the given key.
+     */
+    prepend(value: V, key?: Key): this {
+        const entries: [Key, V][] = this.entries();
+
+        this.items = new Map<Key, V>();
+
+        if (key === undefined) {
+            this.items.set(0, value);
+
+            let index: number = 1;
+
+            for (const [name, item] of entries) {
+                this.items.set(typeof name === 'number' ? index++ : name, item);
+            }
+
+            return this;
+        }
+
+        this.items.set(this.key(key), value);
+
+        for (const [name, item] of entries) {
+            if (!this.items.has(name)) {
+                this.items.set(name, item);
+            }
+        }
+
+        return this;
+    }
+
+    /**
+     * Remove and return the item at the given key.
+     */
+    pull(key: Key): V | undefined;
+    pull<F>(key: Key, fallback: F | (() => F)): V | F;
+    pull(key: Key, fallback?: unknown): unknown {
+        const name: Key = this.key(key);
+
+        if (!this.items.has(name)) {
+            return this.resolve(fallback);
+        }
+
+        const value: V = this.items.get(name) as V;
+
+        this.items.delete(name);
+
+        return value;
+    }
+
+    /**
+     * Append the given values onto the end of the collection.
+     */
+    push(...values: V[]): this {
+        for (const value of values) {
+            this.items.set(this.next(), value);
+        }
+
+        return this;
+    }
+
+    /**
      * Set the item at the given key.
      */
     put(key: Key, value: V): this {
@@ -744,6 +856,35 @@ export class Collection<V = unknown> implements Iterable<V> {
 
             return selected;
         });
+    }
+
+    /**
+     * Remove and return the first item, or the first given number of items.
+     */
+    shift(): V | undefined;
+    shift(count: number): Collection<V>;
+    shift(count?: number): V | Collection<V> | undefined {
+        const entries: [Key, V][] = this.entries();
+
+        if (count === undefined) {
+            const first: [Key, V] | undefined = entries[0];
+
+            if (first === undefined) {
+                return undefined;
+            }
+
+            this.items.delete(first[0]);
+
+            return first[1];
+        }
+
+        const removed: [Key, V][] = entries.slice(0, Math.max(0, count));
+
+        for (const [key] of removed) {
+            this.items.delete(key);
+        }
+
+        return new Collection<V>(removed.map(([, value]: [Key, V]): V => value));
     }
 
     /**
@@ -916,6 +1057,19 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     sortKeysUsing(callback: Comparator<Key>): Collection<V> {
         return this.sorted((a: [Key, V], b: [Key, V]): number => callback(a[0], b[0]));
+    }
+
+    /**
+     * Remove and return a slice of the items, optionally replacing them, renumbering keys.
+     */
+    splice(offset: number, length?: number, replacement: ItemsInput<V> = []): Collection<V> {
+        const values: V[] = [...this.items.values()];
+        const count: number = length === undefined ? values.length - offset : length;
+        const removed: V[] = values.splice(offset, count, ...this.valuesOf(replacement));
+
+        this.items = new Map<Key, V>(values.map((value: V, index: number): [Key, V] => [index, value]));
+
+        return new Collection<V>(removed);
     }
 
     /**
@@ -1192,6 +1346,21 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return true;
+    }
+
+    /**
+     * Get the next integer key for an appended item.
+     */
+    protected next(items: Map<Key, unknown> = this.items): number {
+        let next: number = 0;
+
+        for (const key of items.keys()) {
+            if (typeof key === 'number' && key >= next) {
+                next = key + 1;
+            }
+        }
+
+        return next;
     }
 
     /**

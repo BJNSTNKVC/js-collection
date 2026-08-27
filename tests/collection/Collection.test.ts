@@ -139,6 +139,20 @@ describe('Collection.wrap', (): void => {
     });
 });
 
+describe('Collection.add', (): void => {
+    test('appends an item under the next integer key', (): void => {
+        expect(new Collection<number>([1, 2]).add(3).all()).toEqual([1, 2, 3]);
+    });
+
+    test('ignores string keys when picking the next integer key', (): void => {
+        expect(new Collection<number>({ a: 1 }).add(2).all()).toEqual({ a: 1, 0: 2 });
+    });
+
+    test('continues after the highest integer key', (): void => {
+        expect(new Collection<number>(new Map<Key, number>([[5, 1]])).add(2).keys().all()).toEqual([5, 6]);
+    });
+});
+
 describe('Collection.after', (): void => {
     test('returns the item following the matched value', (): void => {
         expect(new Collection<number>([1, 2, 3]).after(2)).toEqual(3);
@@ -483,6 +497,23 @@ describe('Collection.get', (): void => {
     });
 });
 
+describe('Collection.getOrPut', (): void => {
+    test('returns the existing item without storing anything', (): void => {
+        const collection: Collection<number> = new Collection<number>({ a: 1 });
+
+        expect(collection.getOrPut('a', 9)).toEqual(1);
+        expect(collection.all()).toEqual({ a: 1 });
+    });
+
+    test('stores and returns the given value when the key is missing', (): void => {
+        const collection: Collection<number> = new Collection<number>({ a: 1 });
+
+        expect(collection.getOrPut('b', 2)).toEqual(2);
+        expect(collection.getOrPut('c', (): number => 3)).toEqual(3);
+        expect(collection.all()).toEqual({ a: 1, b: 2, c: 3 });
+    });
+});
+
 describe('Collection.has', (): void => {
     test('determines whether every given key is present', (): void => {
         const collection: Collection<number> = new Collection<number>({ a: 1, b: 2 });
@@ -676,6 +707,60 @@ describe('Collection.pluck', (): void => {
     });
 });
 
+describe('Collection.pop', (): void => {
+    test('removes and returns the last item', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3]);
+
+        expect(collection.pop()).toEqual(3);
+        expect(collection.all()).toEqual([1, 2]);
+        expect(new Collection<number>([]).pop()).toBeUndefined();
+    });
+
+    test('removes and returns the last given number of items', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3]);
+
+        expect(collection.pop(2).all()).toEqual([3, 2]);
+        expect(collection.all()).toEqual([1]);
+        expect(new Collection<number>([1]).pop(5).all()).toEqual([1]);
+    });
+});
+
+describe('Collection.prepend', (): void => {
+    test('prepends an item renumbering integer keys', (): void => {
+        expect(new Collection<number>([1, 2]).prepend(0).all()).toEqual([0, 1, 2]);
+        expect(new Collection<number>({ a: 1 }).prepend(0).all()).toEqual({ 0: 0, a: 1 });
+    });
+
+    test('prepends an item under the given key', (): void => {
+        expect(new Collection<number>({ b: 2 }).prepend(1, 'a').all()).toEqual({ a: 1, b: 2 });
+    });
+
+    test('lets the prepended key win over an existing one', (): void => {
+        expect(new Collection<number>({ a: 1, b: 2 }).prepend(9, 'a').all()).toEqual({ a: 9, b: 2 });
+    });
+});
+
+describe('Collection.pull', (): void => {
+    test('removes and returns the item at the given key', (): void => {
+        const collection: Collection<number> = new Collection<number>({ a: 1, b: 2 });
+
+        expect(collection.pull('a')).toEqual(1);
+        expect(collection.all()).toEqual({ b: 2 });
+    });
+
+    test('falls back when the key is missing', (): void => {
+        expect(new Collection<number>({ a: 1 }).pull('b')).toBeUndefined();
+        expect(new Collection<number>({ a: 1 }).pull('b', 0)).toEqual(0);
+        expect(new Collection<number>({ a: 1 }).pull('b', (): number => 9)).toEqual(9);
+    });
+});
+
+describe('Collection.push', (): void => {
+    test('appends the given values', (): void => {
+        expect(new Collection<number>([1]).push(2, 3).all()).toEqual([1, 2, 3]);
+    });
+});
+
 describe('Collection.put', (): void => {
     test('sets the item at the given key', (): void => {
         expect(new Collection<number>({ a: 1 }).put('b', 2).all()).toEqual({ a: 1, b: 2 });
@@ -763,6 +848,24 @@ describe('Collection.select', (): void => {
 
     test('skips the keys an item does not carry', (): void => {
         expect(new Collection<unknown>([{ name: 'Desk' }]).select('name', 'missing').all()).toEqual([{ name: 'Desk' }]);
+    });
+});
+
+describe('Collection.shift', (): void => {
+    test('removes and returns the first item', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3]);
+
+        expect(collection.shift()).toEqual(1);
+        expect(collection.all()).toEqual({ 1: 2, 2: 3 });
+        expect(new Collection<number>([]).shift()).toBeUndefined();
+    });
+
+    test('removes and returns the first given number of items', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3]);
+
+        expect(collection.shift(2).all()).toEqual([1, 2]);
+        expect(collection.all()).toEqual({ 2: 3 });
+        expect(new Collection<number>([1]).shift(-1).all()).toEqual([]);
     });
 });
 
@@ -940,6 +1043,29 @@ describe('Collection.sortKeysUsing', (): void => {
         const collection: Collection<number> = new Collection<number>({ B: 2, a: 1 });
 
         expect(collection.sortKeysUsing((a: Key, b: Key): number => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })).keys().all()).toEqual(['a', 'B']);
+    });
+});
+
+describe('Collection.splice', (): void => {
+    test('removes and returns a slice, renumbering keys', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3]);
+
+        expect(collection.splice(1).all()).toEqual([2, 3]);
+        expect(collection.all()).toEqual([1]);
+    });
+
+    test('removes only the given length', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3]);
+
+        expect(collection.splice(1, 1).all()).toEqual([2]);
+        expect(collection.all()).toEqual([1, 3]);
+    });
+
+    test('replaces the removed items with the given ones', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3]);
+
+        expect(collection.splice(1, 1, [9, 8]).all()).toEqual([2]);
+        expect(collection.all()).toEqual([1, 9, 8, 3]);
     });
 });
 
