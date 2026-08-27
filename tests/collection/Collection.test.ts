@@ -180,6 +180,32 @@ describe('Collection.before', (): void => {
     });
 });
 
+describe('Collection.chunk', (): void => {
+    test('breaks the collection into chunks preserving keys', (): void => {
+        const chunks: Collection<Collection<number>> = new Collection<number>([1, 2, 3, 4, 5]).chunk(2);
+
+        expect(chunks.count()).toEqual(3);
+        expect(chunks.get(0)?.all()).toEqual([1, 2]);
+        expect(chunks.get(2)?.all()).toEqual({ 4: 5 });
+    });
+
+    test('returns an empty collection for a size below one', (): void => {
+        expect(new Collection<number>([1, 2]).chunk(0).all()).toEqual([]);
+    });
+});
+
+describe('Collection.chunkWhile', (): void => {
+    test('chunks while the callback holds', (): void => {
+        const chunks: Collection<Collection<number>> = new Collection<number>([1, 1, 2, 2, 3]).chunkWhile((value: number, _key: Key, chunk: Collection<number>): boolean => value === chunk.last());
+
+        expect(chunks.map((chunk: Collection<number>): unknown => chunk.values().all()).all()).toEqual([[1, 1], [2, 2], [3]]);
+    });
+
+    test('returns an empty collection when there is nothing to chunk', (): void => {
+        expect(new Collection<number>([]).chunkWhile((): boolean => true).all()).toEqual([]);
+    });
+});
+
 describe('Collection.collect', (): void => {
     test('creates a fresh collection with the same entries', (): void => {
         const collection: Collection<number> = new Collection<number>({ a: 1 });
@@ -434,6 +460,16 @@ describe('Collection.forget', (): void => {
     });
 });
 
+describe('Collection.forPage', (): void => {
+    test('returns the items of the given page', (): void => {
+        const collection: Collection<number> = new Collection<number>([1, 2, 3, 4, 5]);
+
+        expect(collection.forPage(1, 2).values().all()).toEqual([1, 2]);
+        expect(collection.forPage(3, 2).values().all()).toEqual([5]);
+        expect(collection.forPage(0, 2).values().all()).toEqual([1, 2]);
+    });
+});
+
 describe('Collection.get', (): void => {
     test('returns the item at the given key', (): void => {
         expect(new Collection<number>({ a: 1 }).get('a')).toEqual(1);
@@ -583,10 +619,43 @@ describe('Collection.mapWithKeys', (): void => {
     });
 });
 
+describe('Collection.nth', (): void => {
+    test('returns every n-th item', (): void => {
+        expect(new Collection<string>(['a', 'b', 'c', 'd', 'e', 'f']).nth(4).all()).toEqual(['a', 'e']);
+    });
+
+    test('starts at the given offset', (): void => {
+        expect(new Collection<string>(['a', 'b', 'c', 'd', 'e', 'f']).nth(4, 1).all()).toEqual(['b', 'f']);
+    });
+});
+
 describe('Collection.only', (): void => {
     test('returns only the items with the given keys', (): void => {
         expect(new Collection<number>({ a: 1, b: 2, c: 3 }).only('a', 'c').all()).toEqual({ a: 1, c: 3 });
         expect(new Collection<number>([1, 2, 3]).only('0', 1).all()).toEqual([1, 2]);
+    });
+});
+
+describe('Collection.partition', (): void => {
+    test('splits the items by a callback', (): void => {
+        const groups: Collection<Collection<number>> = new Collection<number>([1, 2, 3, 4]).partition((value: number): boolean => value % 2 === 0);
+
+        expect(groups.get(0)?.values().all()).toEqual([2, 4]);
+        expect(groups.get(1)?.values().all()).toEqual([1, 3]);
+    });
+
+    test('splits the items by a truthy key', (): void => {
+        const groups: Collection<Collection<Product>> = new Collection<Product>(products).partition('stock');
+
+        expect(groups.get(0)?.pluck('name').all()).toEqual(['Desk', 'Door']);
+        expect(groups.get(1)?.pluck('name').all()).toEqual(['Chair']);
+    });
+
+    test('splits the items by a condition', (): void => {
+        const groups: Collection<Collection<Product>> = new Collection<Product>(products).partition('price', '>', 150);
+
+        expect(groups.get(0)?.pluck('name').all()).toEqual(['Desk']);
+        expect(groups.get(1)?.count()).toEqual(2);
     });
 });
 
@@ -614,6 +683,25 @@ describe('Collection.put', (): void => {
     });
 });
 
+describe('Collection.random', (): void => {
+    test('returns one random item', (): void => {
+        expect([1, 2, 3]).toContain(new Collection<number>([1, 2, 3]).random());
+        expect(new Collection<number>([]).random()).toBeUndefined();
+    });
+
+    test('returns the given number of random items', (): void => {
+        const random: Collection<number> = new Collection<number>([1, 2, 3]).random(2);
+
+        expect(random.count()).toEqual(2);
+        expect(random.every((value: number): boolean => [1, 2, 3].includes(value))).toEqual(true);
+        expect(new Collection<number>([1, 2, 3]).random(3).sort().values().all()).toEqual([1, 2, 3]);
+    });
+
+    test('throws when more items are requested than are available', (): void => {
+        expect((): unknown => new Collection<number>([1]).random(2)).toThrow('You requested 2 items, but there are only 1 items available.');
+    });
+});
+
 describe('Collection.reduce', (): void => {
     test('reduces the collection to a single value', (): void => {
         expect(new Collection<number>([1, 2, 3]).reduce((carry: number, value: number): number => carry + value, 0)).toEqual(6);
@@ -637,6 +725,13 @@ describe('Collection.reject', (): void => {
 
     test('drops the truthy items when no callback is given', (): void => {
         expect(new Collection<unknown>([1, null, 0, 'a']).reject().values().all()).toEqual([null, 0]);
+    });
+});
+
+describe('Collection.reverse', (): void => {
+    test('reverses the items preserving keys', (): void => {
+        expect(new Collection<number>([1, 2, 3]).reverse().all()).toEqual({ 2: 3, 1: 2, 0: 1 });
+        expect(new Collection<number>({ a: 1, b: 2 }).reverse().all()).toEqual({ b: 2, a: 1 });
     });
 });
 
@@ -668,6 +763,65 @@ describe('Collection.select', (): void => {
 
     test('skips the keys an item does not carry', (): void => {
         expect(new Collection<unknown>([{ name: 'Desk' }]).select('name', 'missing').all()).toEqual([{ name: 'Desk' }]);
+    });
+});
+
+describe('Collection.shuffle', (): void => {
+    test('returns the same values in some order', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4]).shuffle().sort().values().all()).toEqual([1, 2, 3, 4]);
+        expect(new Collection<number>([]).shuffle().all()).toEqual([]);
+    });
+});
+
+describe('Collection.skip', (): void => {
+    test('skips the given number of items', (): void => {
+        expect(new Collection<number>([1, 2, 3]).skip(2).values().all()).toEqual([3]);
+    });
+});
+
+describe('Collection.skipUntil', (): void => {
+    test('skips items until the value matches', (): void => {
+        expect(new Collection<number>([1, 2, 3, 1]).skipUntil(3).values().all()).toEqual([3, 1]);
+    });
+
+    test('skips items until the callback matches', (): void => {
+        expect(new Collection<number>([1, 2, 3]).skipUntil((value: number): boolean => value > 1).values().all()).toEqual([2, 3]);
+        expect(new Collection<number>([1, 2]).skipUntil(9).all()).toEqual([]);
+    });
+});
+
+describe('Collection.skipWhile', (): void => {
+    test('skips items while the callback matches', (): void => {
+        expect(new Collection<number>([1, 2, 3, 1]).skipWhile((value: number): boolean => value < 3).values().all()).toEqual([3, 1]);
+        expect(new Collection<number>([1, 1]).skipWhile(1).all()).toEqual([]);
+    });
+});
+
+describe('Collection.slice', (): void => {
+    test('slices from the given offset preserving keys', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4]).slice(2).all()).toEqual({ 2: 3, 3: 4 });
+        expect(new Collection<number>([1, 2, 3, 4]).slice(-2).values().all()).toEqual([3, 4]);
+        expect(new Collection<number>([1, 2]).slice(-9).values().all()).toEqual([1, 2]);
+    });
+
+    test('slices the given length', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4]).slice(1, 2).values().all()).toEqual([2, 3]);
+        expect(new Collection<number>([1, 2, 3, 4]).slice(1, -1).values().all()).toEqual([2, 3]);
+        expect(new Collection<number>([1, 2, 3, 4]).slice(2, -3).values().all()).toEqual([]);
+    });
+});
+
+describe('Collection.sliding', (): void => {
+    test('returns a sliding window over the items', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4]).sliding().map((window: Collection<number>): unknown => window.values().all()).all()).toEqual([[1, 2], [2, 3], [3, 4]]);
+    });
+
+    test('advances the window by the given step', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4, 5]).sliding(3, 2).map((window: Collection<number>): unknown => window.values().all()).all()).toEqual([[1, 2, 3], [3, 4, 5]]);
+    });
+
+    test('returns an empty collection when the window does not fit', (): void => {
+        expect(new Collection<number>([1]).sliding(3).all()).toEqual([]);
     });
 });
 
@@ -703,6 +857,135 @@ describe('Collection.some', (): void => {
         expect(collection.some('name', 'Desk')).toEqual(true);
         expect(collection.some('price', '>', 150)).toEqual(true);
         expect(collection.some('price', '>', 500)).toEqual(false);
+    });
+});
+
+describe('Collection.sort', (): void => {
+    test('sorts the items preserving keys', (): void => {
+        expect(new Collection<number>([3, 1, 2]).sort().all()).toEqual({ 1: 1, 2: 2, 0: 3 });
+        expect(new Collection<number>([3, 1, 2]).sort().values().all()).toEqual([1, 2, 3]);
+    });
+
+    test('sorts strings and mixed numerics naturally', (): void => {
+        expect(new Collection<string>(['b', 'a', 'c']).sort().values().all()).toEqual(['a', 'b', 'c']);
+        expect(new Collection<unknown>(['10', 9, '8']).sort().values().all()).toEqual(['8', 9, '10']);
+    });
+
+    test('accepts a comparator', (): void => {
+        expect(new Collection<number>([1, 2, 3]).sort((a: number, b: number): number => b - a).values().all()).toEqual([3, 2, 1]);
+    });
+
+    test('sorts nullish values first and equal values stably', (): void => {
+        expect(new Collection<unknown>([1, null, undefined]).sort().values().all()).toEqual([null, undefined, 1]);
+        expect(new Collection<unknown>([null, 1, null]).sort().values().all()).toEqual([null, null, 1]);
+    });
+});
+
+describe('Collection.sortBy', (): void => {
+    test('sorts by the retrieved value', (): void => {
+        expect(new Collection<Product>(products).sortBy('price').pluck('name').all()).toEqual(['Chair', 'Door', 'Desk']);
+        expect(new Collection<Product>(products).sortBy((product: Product): string => product.name).pluck('name').all()).toEqual(['Chair', 'Desk', 'Door']);
+    });
+
+    test('sorts descending when asked to', (): void => {
+        expect(new Collection<Product>(products).sortBy('price', true).pluck('name').all()).toEqual(['Desk', 'Chair', 'Door']);
+    });
+
+    test('sorts by a list of criteria', (): void => {
+        const sorted: Collection<Product> = new Collection<Product>(products).sortBy([['category', 'asc'], ['price', 'desc']]);
+
+        expect(sorted.pluck('name').all()).toEqual(['Door', 'Desk', 'Chair']);
+    });
+
+    test('falls through to the next criterion only when the previous ties', (): void => {
+        const sorted: Collection<Product> = new Collection<Product>(products).sortBy([['price', 'asc'], ['name', 'asc']]);
+
+        expect(sorted.pluck('name').all()).toEqual(['Chair', 'Door', 'Desk']);
+    });
+
+    test('leaves items tying on every criterion in place', (): void => {
+        const tied: Collection<Product> = new Collection<Product>([products[1] as Product, products[1] as Product]);
+
+        expect(tied.sortBy([['price', 'asc'], ['name', 'asc']]).pluck('name').all()).toEqual(['Chair', 'Chair']);
+    });
+});
+
+describe('Collection.sortByDesc', (): void => {
+    test('sorts by the retrieved value in descending order', (): void => {
+        expect(new Collection<Product>(products).sortByDesc('price').pluck('name').all()).toEqual(['Desk', 'Chair', 'Door']);
+    });
+});
+
+describe('Collection.sortDesc', (): void => {
+    test('sorts the items in descending order', (): void => {
+        expect(new Collection<number>([1, 3, 2]).sortDesc().values().all()).toEqual([3, 2, 1]);
+    });
+});
+
+describe('Collection.sortKeys', (): void => {
+    test('sorts the items by their keys', (): void => {
+        expect(new Collection<number>({ b: 2, a: 1 }).sortKeys().all()).toEqual({ a: 1, b: 2 });
+        expect(new Collection<number>({ b: 2, a: 1 }).sortKeys(true).all()).toEqual({ b: 2, a: 1 });
+    });
+});
+
+describe('Collection.sortKeysDesc', (): void => {
+    test('sorts the items by their keys in descending order', (): void => {
+        expect(new Collection<number>({ a: 1, c: 3, b: 2 }).sortKeysDesc().keys().all()).toEqual(['c', 'b', 'a']);
+    });
+});
+
+describe('Collection.sortKeysUsing', (): void => {
+    test('sorts the items by their keys with the given comparator', (): void => {
+        const collection: Collection<number> = new Collection<number>({ B: 2, a: 1 });
+
+        expect(collection.sortKeysUsing((a: Key, b: Key): number => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })).keys().all()).toEqual(['a', 'B']);
+    });
+});
+
+describe('Collection.split', (): void => {
+    test('splits the items into the given number of groups', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4, 5]).split(3).map((group: Collection<number>): unknown => group.values().all()).all()).toEqual([[1, 2], [3, 4], [5]]);
+    });
+
+    test('drops groups that would be empty', (): void => {
+        expect(new Collection<number>([1]).split(3).count()).toEqual(1);
+        expect(new Collection<number>([]).split(3).all()).toEqual([]);
+    });
+});
+
+describe('Collection.splitIn', (): void => {
+    test('fills each group before moving to the next', (): void => {
+        expect(new Collection<number>([1, 2, 3, 4, 5]).splitIn(3).map((group: Collection<number>): unknown => group.values().all()).all()).toEqual([[1, 2], [3, 4], [5]]);
+        expect(new Collection<number>([1, 2, 3, 4, 5, 6]).splitIn(2).map((group: Collection<number>): unknown => group.values().all()).all()).toEqual([[1, 2, 3], [4, 5, 6]]);
+    });
+});
+
+describe('Collection.take', (): void => {
+    test('takes from the front for a positive limit', (): void => {
+        expect(new Collection<number>([1, 2, 3]).take(2).values().all()).toEqual([1, 2]);
+    });
+
+    test('takes from the end for a negative limit', (): void => {
+        expect(new Collection<number>([1, 2, 3]).take(-2).values().all()).toEqual([2, 3]);
+    });
+});
+
+describe('Collection.takeUntil', (): void => {
+    test('takes items until the value matches', (): void => {
+        expect(new Collection<number>([1, 2, 3]).takeUntil(3).values().all()).toEqual([1, 2]);
+    });
+
+    test('takes items until the callback matches', (): void => {
+        expect(new Collection<number>([1, 2, 3]).takeUntil((value: number): boolean => value > 2).values().all()).toEqual([1, 2]);
+        expect(new Collection<number>([1, 2]).takeUntil(9).values().all()).toEqual([1, 2]);
+    });
+});
+
+describe('Collection.takeWhile', (): void => {
+    test('takes items while the callback matches', (): void => {
+        expect(new Collection<number>([1, 2, 3]).takeWhile((value: number): boolean => value < 3).values().all()).toEqual([1, 2]);
+        expect(new Collection<number>([1, 2]).takeWhile(9).all()).toEqual([]);
     });
 });
 
@@ -867,6 +1150,56 @@ describe('Collection[Symbol.iterator]', (): void => {
         }
 
         expect(seen).toEqual([1, 2]);
+    });
+});
+
+describe('Collection comparison semantics', (): void => {
+    test('compares nullish values as interchangeable', (): void => {
+        expect(new Collection<unknown>([null]).contains(undefined)).toEqual(true);
+        expect(new Collection<unknown>([null]).contains(0)).toEqual(false);
+        expect(new Collection<unknown>([0]).contains(null)).toEqual(false);
+    });
+
+    test('compares plain objects and arrays structurally', (): void => {
+        expect(new Collection<unknown>([{ a: 1 }]).contains({ a: 1 })).toEqual(true);
+        expect(new Collection<unknown>([{ a: 1 }]).contains({ a: 2 })).toEqual(false);
+        expect(new Collection<unknown>([{ a: 1 }]).contains({ b: 1 })).toEqual(false);
+        expect(new Collection<unknown>([{ a: 1 }]).contains({ a: 1, b: 2 })).toEqual(false);
+        expect(new Collection<unknown>([[1, 2]]).contains([1, 2])).toEqual(true);
+    });
+
+    test('compares dates by their time', (): void => {
+        const date: Date = new Date('2026-08-27T00:00:00.000Z');
+
+        expect(new Collection<unknown>([date]).contains(new Date(date.getTime()))).toEqual(true);
+        expect(new Collection<unknown>([date]).contains(new Date(0))).toEqual(false);
+        expect(new Collection<unknown>([date]).contains({ a: 1 })).toEqual(false);
+    });
+
+    test('never compares an object equal to a scalar', (): void => {
+        expect(new Collection<unknown>([{ a: 1 }]).contains(1)).toEqual(false);
+        expect(new Collection<unknown>([1]).contains({ a: 1 })).toEqual(false);
+    });
+
+    test('compares numbers and numeric strings numerically', (): void => {
+        expect(new Collection<unknown>(['1']).contains(1)).toEqual(true);
+        expect(new Collection<unknown>(['abc']).contains(0)).toEqual(false);
+        expect(new Collection<unknown>(['']).contains(0)).toEqual(false);
+        expect(new Collection<unknown>([Number.NaN]).contains(Number.NaN)).toEqual(true);
+        expect(new Collection<unknown>([Number.NaN]).contains(0)).toEqual(false);
+    });
+
+    test('compares booleans by truthiness', (): void => {
+        expect(new Collection<unknown>([true]).contains(1)).toEqual(true);
+        expect(new Collection<unknown>([true]).contains('a')).toEqual(true);
+        expect(new Collection<unknown>([false]).contains(0)).toEqual(true);
+        expect(new Collection<unknown>([true]).contains(false)).toEqual(false);
+    });
+
+    test('orders values numerically, then by nullishness, then as strings', (): void => {
+        expect(new Collection<unknown>(['b', 'a']).sortBy((value: unknown): unknown => value).values().all()).toEqual(['a', 'b']);
+        expect(new Collection<unknown>(['a', 'a']).sortBy((value: unknown): unknown => value).values().all()).toEqual(['a', 'a']);
+        expect(new Collection<unknown>([{}, null]).sortBy((value: unknown): unknown => value).values().all()).toEqual([null, {}]);
     });
 });
 

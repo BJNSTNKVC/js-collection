@@ -1,5 +1,5 @@
 import { ItemNotFoundException, MultipleItemsFoundException } from './exceptions';
-import type { Callback, Constructor, ItemsInput, Key, Operator, Primitive } from './types';
+import type { Callback, Comparator, Constructor, Criteria, Direction, ItemsInput, Key, Operator, Primitive } from './types';
 
 // A sentinel telling an absent value apart from a stored undefined, which is what
 // lets `select` skip the keys an item does not carry instead of writing them out
@@ -139,6 +139,47 @@ export class Collection<V = unknown> implements Iterable<V> {
         const found: [Key, V] | undefined = entries[index - 1];
 
         return found === undefined ? undefined : found[1];
+    }
+
+    /**
+     * Break the collection into chunks of the given size, preserving keys.
+     */
+    chunk(size: number): Collection<Collection<V>> {
+        if (size <= 0) {
+            return new Collection<Collection<V>>();
+        }
+
+        const entries: [Key, V][] = this.entries();
+        const chunks: Collection<V>[] = [];
+
+        for (let index: number = 0; index < entries.length; index += size) {
+            chunks.push(new Collection<V>(new Map<Key, V>(entries.slice(index, index + size))));
+        }
+
+        return new Collection<Collection<V>>(chunks);
+    }
+
+    /**
+     * Chunk the collection into groups for as long as the callback returns true.
+     */
+    chunkWhile(callback: (value: V, key: Key, chunk: Collection<V>) => boolean): Collection<Collection<V>> {
+        const chunks: Collection<V>[] = [];
+        let current: [Key, V][] = [];
+
+        for (const [key, value] of this.items) {
+            if (current.length > 0 && !this.truthy(callback(value, key, new Collection<V>(new Map<Key, V>(current))))) {
+                chunks.push(new Collection<V>(new Map<Key, V>(current)));
+                current = [];
+            }
+
+            current.push([key, value]);
+        }
+
+        if (current.length > 0) {
+            chunks.push(new Collection<V>(new Map<Key, V>(current)));
+        }
+
+        return new Collection<Collection<V>>(chunks);
     }
 
     /**
@@ -401,6 +442,13 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get the items for the given page number, sized by the given per-page count.
+     */
+    forPage(page: number, perPage: number): Collection<V> {
+        return this.slice(Math.max(0, (page - 1) * perPage), perPage);
+    }
+
+    /**
      * Get the item at the given key, falling back when the key is missing.
      */
     get(key: Key): V | undefined;
@@ -533,12 +581,48 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Get every n-th item, starting at the given offset.
+     */
+    nth(step: number, offset: number = 0): Collection<V> {
+        const values: V[] = [];
+        let position: number = 0;
+
+        for (const value of this.slice(offset)) {
+            if (position % step === 0) {
+                values.push(value);
+            }
+
+            position++;
+        }
+
+        return new Collection<V>(values);
+    }
+
+    /**
      * Get only the items with the given keys.
      */
     only(...keys: Key[]): Collection<V> {
         const wanted: Key[] = keys.map((key: Key): Key => this.key(key));
 
         return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => wanted.includes(key))));
+    }
+
+    /**
+     * Split the collection into the items that pass the truth test and those that fail it.
+     */
+    partition(key: Key | Callback<V>, operator?: unknown, value?: unknown): Collection<Collection<V>> {
+        const predicate: Callback<V> = arguments.length === 1
+            ? this.retriever(key)
+            : this.condition(key as Key, operator, value, arguments.length);
+
+        const passed: [Key, V][] = [];
+        const failed: [Key, V][] = [];
+
+        for (const [name, item] of this.items) {
+            (this.truthy(predicate(item, name)) ? passed : failed).push([name, item]);
+        }
+
+        return new Collection<Collection<V>>([new Collection<V>(new Map<Key, V>(passed)), new Collection<V>(new Map<Key, V>(failed))]);
     }
 
     /**
@@ -565,6 +649,25 @@ export class Collection<V = unknown> implements Iterable<V> {
         this.items.set(this.key(key), value);
 
         return this;
+    }
+
+    /**
+     * Get one random item, or the given number of random items.
+     */
+    random(): V | undefined;
+    random(count: number): Collection<V>;
+    random(count?: number): V | Collection<V> | undefined {
+        const values: V[] = [...this.items.values()];
+
+        if (count === undefined) {
+            return values.length === 0 ? undefined : values[Math.floor(Math.random() * values.length)];
+        }
+
+        if (count > values.length) {
+            throw new RangeError(`You requested ${count} items, but there are only ${values.length} items available.`);
+        }
+
+        return new Collection<V>(this.shuffled(values).slice(0, count));
     }
 
     /**
@@ -603,6 +706,13 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
+     * Reverse the order of the items, preserving keys.
+     */
+    reverse(): Collection<V> {
+        return new Collection<V>(new Map<Key, V>(this.entries().reverse()));
+    }
+
+    /**
      * Get the key of the first item matching the given value or callback, or false when absent.
      */
     search(value: V | Callback<V, boolean>, strict: boolean = false): Key | false {
@@ -634,6 +744,64 @@ export class Collection<V = unknown> implements Iterable<V> {
 
             return selected;
         });
+    }
+
+    /**
+     * Shuffle the items into a random order.
+     */
+    shuffle(): Collection<V> {
+        return new Collection<V>(this.shuffled([...this.items.values()]));
+    }
+
+    /**
+     * Skip the given number of items.
+     */
+    skip(count: number): Collection<V> {
+        return this.slice(count);
+    }
+
+    /**
+     * Skip items until the given value or callback matches.
+     */
+    skipUntil(value: V | Callback<V, boolean>): Collection<V> {
+        return this.skipping(value, false);
+    }
+
+    /**
+     * Skip items while the given value or callback matches.
+     */
+    skipWhile(value: V | Callback<V, boolean>): Collection<V> {
+        return this.skipping(value, true);
+    }
+
+    /**
+     * Get a slice of the items, preserving keys.
+     */
+    slice(offset: number, length?: number): Collection<V> {
+        const entries: [Key, V][] = this.entries();
+        const start: number = offset < 0 ? Math.max(0, entries.length + offset) : offset;
+
+        if (length === undefined) {
+            return new Collection<V>(new Map<Key, V>(entries.slice(start)));
+        }
+
+        const end: number = length < 0 ? entries.length + length : start + length;
+
+        return new Collection<V>(new Map<Key, V>(entries.slice(start, Math.max(start, end))));
+    }
+
+    /**
+     * Get a sliding window over the items of the given size, advanced by the given step.
+     */
+    sliding(size: number = 2, step: number = 1): Collection<Collection<V>> {
+        const count: number = Math.floor((this.items.size - size) / step) + 1;
+        const windows: Collection<V>[] = [];
+
+        for (let index: number = 0; index < count; index++) {
+            windows.push(this.slice(index * step, size));
+        }
+
+        return new Collection<Collection<V>>(windows);
     }
 
     /**
@@ -673,6 +841,134 @@ export class Collection<V = unknown> implements Iterable<V> {
             default:
                 return this.contains(key, operator, value);
         }
+    }
+
+    /**
+     * Sort the items, preserving keys.
+     */
+    sort(callback?: Comparator<V>): Collection<V> {
+        return this.sorted((a: [Key, V], b: [Key, V]): number => callback === undefined ? this.comparator(a[1], b[1]) : callback(a[1], b[1]));
+    }
+
+    /**
+     * Sort the items by the given key, callback, or list of criteria.
+     */
+    sortBy(criteria: Criteria<V>, descending: boolean = false): Collection<V> {
+        if (Array.isArray(criteria)) {
+            const comparators: [Callback<V>, boolean][] = criteria.map(([target, direction]: [Key | Callback<V>, Direction]): [Callback<V>, boolean] => [this.retriever(target), direction === 'desc']);
+
+            return this.sorted((a: [Key, V], b: [Key, V]): number => {
+                for (const [retriever, reversed] of comparators) {
+                    const result: number = this.comparator(retriever(a[1], a[0]), retriever(b[1], b[0]));
+
+                    if (result !== 0) {
+                        return reversed ? -result : result;
+                    }
+                }
+
+                return 0;
+            });
+        }
+
+        const retriever: Callback<V> = this.retriever(criteria);
+
+        return this.sorted((a: [Key, V], b: [Key, V]): number => {
+            const result: number = this.comparator(retriever(a[1], a[0]), retriever(b[1], b[0]));
+
+            return descending ? -result : result;
+        });
+    }
+
+    /**
+     * Sort the items by the given key, callback, or list of criteria in descending order.
+     */
+    sortByDesc(criteria: Criteria<V>): Collection<V> {
+        return this.sortBy(criteria, true);
+    }
+
+    /**
+     * Sort the items in descending order, preserving keys.
+     */
+    sortDesc(): Collection<V> {
+        return this.sorted((a: [Key, V], b: [Key, V]): number => -this.comparator(a[1], b[1]));
+    }
+
+    /**
+     * Sort the items by their keys.
+     */
+    sortKeys(descending: boolean = false): Collection<V> {
+        return this.sorted((a: [Key, V], b: [Key, V]): number => {
+            const result: number = this.comparator(a[0], b[0]);
+
+            return descending ? -result : result;
+        });
+    }
+
+    /**
+     * Sort the items by their keys in descending order.
+     */
+    sortKeysDesc(): Collection<V> {
+        return this.sortKeys(true);
+    }
+
+    /**
+     * Sort the items by their keys using the given comparator.
+     */
+    sortKeysUsing(callback: Comparator<Key>): Collection<V> {
+        return this.sorted((a: [Key, V], b: [Key, V]): number => callback(a[0], b[0]));
+    }
+
+    /**
+     * Split the items into the given number of groups.
+     */
+    split(groups: number): Collection<Collection<V>> {
+        if (this.items.size === 0) {
+            return new Collection<Collection<V>>();
+        }
+
+        const size: number = Math.floor(this.items.size / groups);
+        const remaining: number = this.items.size % groups;
+        const result: Collection<V>[] = [];
+        let start: number = 0;
+
+        for (let index: number = 0; index < groups; index++) {
+            const length: number = index < remaining ? size + 1 : size;
+
+            if (length > 0) {
+                result.push(this.slice(start, length));
+                start += length;
+            }
+        }
+
+        return new Collection<Collection<V>>(result);
+    }
+
+    /**
+     * Split the items into groups, filling each group before moving to the next.
+     */
+    splitIn(groups: number): Collection<Collection<V>> {
+        return this.chunk(Math.ceil(this.items.size / groups));
+    }
+
+    /**
+     * Take the given number of items, taking from the end for a negative limit.
+     */
+    take(limit: number): Collection<V> {
+        return limit < 0 ? this.slice(limit, Math.abs(limit)) : this.slice(0, limit);
+    }
+
+    /**
+     * Take items until the given value or callback matches.
+     */
+    takeUntil(value: V | Callback<V, boolean>): Collection<V> {
+        return this.taking(value, false);
+    }
+
+    /**
+     * Take items while the given value or callback matches.
+     */
+    takeWhile(value: V | Callback<V, boolean>): Collection<V> {
+        return this.taking(value, true);
     }
 
     /**
@@ -1182,5 +1478,66 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return (target as Record<string, unknown>)[segment];
+    }
+
+    /**
+     * Sort the entries of the collection with the given comparator.
+     */
+    protected sorted(comparator: (a: [Key, V], b: [Key, V]) => number): Collection<V> {
+        return new Collection<V>(new Map<Key, V>(this.entries().sort(comparator)));
+    }
+
+    /**
+     * Shuffle the given values into a random order.
+     */
+    protected shuffled(values: V[]): V[] {
+        const shuffled: V[] = [...values];
+
+        for (let index: number = shuffled.length - 1; index > 0; index--) {
+            const swap: number = Math.floor(Math.random() * (index + 1));
+
+            [shuffled[index], shuffled[swap]] = [shuffled[swap] as V, shuffled[index] as V];
+        }
+
+        return shuffled;
+    }
+
+    /**
+     * Skip items until, or for as long as, the given value or callback matches.
+     */
+    protected skipping(value: V | Callback<V, boolean>, matching: boolean): Collection<V> {
+        const predicate: Callback<V, boolean> = this.equality(value, false);
+        const entries: [Key, V][] = [];
+        let skipping: boolean = true;
+
+        for (const [key, item] of this.items) {
+            if (skipping && this.truthy(predicate(item, key)) !== matching) {
+                skipping = false;
+            }
+
+            if (!skipping) {
+                entries.push([key, item]);
+            }
+        }
+
+        return new Collection<V>(new Map<Key, V>(entries));
+    }
+
+    /**
+     * Take items until, or for as long as, the given value or callback matches.
+     */
+    protected taking(value: V | Callback<V, boolean>, matching: boolean): Collection<V> {
+        const predicate: Callback<V, boolean> = this.equality(value, false);
+        const entries: [Key, V][] = [];
+
+        for (const [key, item] of this.items) {
+            if (this.truthy(predicate(item, key)) !== matching) {
+                break;
+            }
+
+            entries.push([key, item]);
+        }
+
+        return new Collection<V>(new Map<Key, V>(entries));
     }
 }

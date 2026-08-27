@@ -11,3 +11,9 @@ export type Primitive = 'string' | 'number' | 'bigint' | 'boolean' | 'symbol' | 
 export type Constructor<T = unknown> = new (...args: never[]) => T;
 
 export type Callback<V, R = unknown> = (value: V, key: Key) => R;
+
+export type Comparator<T = unknown> = (a: T, b: T) => number;
+
+export type Direction = 'asc' | 'desc';
+
+export type Criteria<V> = Key | Callback<V> | [Key | Callback<V>, Direction][];
