@@ -1,11 +1,6 @@
 import { ItemNotFoundException, MultipleItemsFoundException } from './exceptions';
 import type { Callback, Comparator, Constructor, Criteria, Direction, ItemsInput, Key, Operator, Primitive } from './types';
 
-// A sentinel telling an absent value apart from a stored undefined, which is what
-// lets `select` skip the keys an item does not carry instead of writing them out
-// with an undefined value.
-const MISSING: unique symbol = Symbol('missing');
-
 export class Collection<V = unknown> implements Iterable<V> {
     /**
      * The entries contained in the collection, keyed like a PHP array.
@@ -17,20 +12,6 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     constructor(items?: ItemsInput<V>) {
         this.items = new Map<Key, V>(this.parse(items));
-    }
-
-    /**
-     * Create a new empty collection.
-     */
-    static empty<T = unknown>(): Collection<T> {
-        return new Collection<T>();
-    }
-
-    /**
-     * Create a collection by decoding the given JSON string.
-     */
-    static fromJson(json: string): Collection<unknown> {
-        return new Collection<unknown>(JSON.parse(json) as ItemsInput<unknown>);
     }
 
     /**
@@ -110,34 +91,10 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Get the item that comes right after the first item matching the given value or callback.
-     */
-    after(value: V | Callback<V, boolean>, strict: boolean = false): V | undefined {
-        const entries: [Key, V][] = this.entries();
-        const predicate: Callback<V, boolean> = this.equality(value, strict);
-        const index: number = entries.findIndex(([key, item]: [Key, V]): boolean => this.truthy(predicate(item, key)));
-
-        if (index === -1) {
-            return undefined;
-        }
-
-        const found: [Key, V] | undefined = entries[index + 1];
-
-        return found === undefined ? undefined : found[1];
-    }
-
-    /**
      * Get the underlying items, as an array for lists and a plain object otherwise.
      */
     all(): V[] | Record<string, V> {
         return this.list() ? [...this.items.values()] : Object.fromEntries(this.items) as Record<string, V>;
-    }
-
-    /**
-     * Get the average value of the items or of the retrieved values.
-     */
-    average(key?: Key | Callback<V>): number | undefined {
-        return this.avg(key);
     }
 
     /**
@@ -163,23 +120,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Get the item that comes right before the first item matching the given value or callback.
-     */
-    before(value: V | Callback<V, boolean>, strict: boolean = false): V | undefined {
-        const entries: [Key, V][] = this.entries();
-        const predicate: Callback<V, boolean> = this.equality(value, strict);
-        const index: number = entries.findIndex(([key, item]: [Key, V]): boolean => this.truthy(predicate(item, key)));
-
-        if (index === -1) {
-            return undefined;
-        }
-
-        const found: [Key, V] | undefined = entries[index - 1];
-
-        return found === undefined ? undefined : found[1];
-    }
-
-    /**
      * Break the collection into chunks of the given size, preserving keys.
      */
     chunk(size: number): Collection<Collection<V>> {
@@ -192,29 +132,6 @@ export class Collection<V = unknown> implements Iterable<V> {
 
         for (let index: number = 0; index < entries.length; index += size) {
             chunks.push(new Collection<V>(new Map<Key, V>(entries.slice(index, index + size))));
-        }
-
-        return new Collection<Collection<V>>(chunks);
-    }
-
-    /**
-     * Chunk the collection into groups for as long as the callback returns true.
-     */
-    chunkWhile(callback: (value: V, key: Key, chunk: Collection<V>) => boolean): Collection<Collection<V>> {
-        const chunks: Collection<V>[] = [];
-        let current: [Key, V][] = [];
-
-        for (const [key, value] of this.items) {
-            if (current.length > 0 && !this.truthy(callback(value, key, new Collection<V>(new Map<Key, V>(current))))) {
-                chunks.push(new Collection<V>(new Map<Key, V>(current)));
-                current = [];
-            }
-
-            current.push([key, value]);
-        }
-
-        if (current.length > 0) {
-            chunks.push(new Collection<V>(new Map<Key, V>(current)));
         }
 
         return new Collection<Collection<V>>(chunks);
@@ -236,43 +153,10 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Collapse nested items into a single collection, preserving their keys.
-     */
-    collapseWithKeys(): Collection<unknown> {
-        const collapsed: Map<Key, unknown> = new Map<Key, unknown>();
-
-        for (const value of this.items.values()) {
-            if (this.nested(value)) {
-                for (const [key, entry] of this.parse(value as ItemsInput<unknown>)) {
-                    collapsed.set(key, entry);
-                }
-            }
-        }
-
-        return new Collection<unknown>(collapsed);
-    }
-
-    /**
      * Create a fresh collection holding the same entries.
      */
     collect(): Collection<V> {
         return new Collection<V>(this);
-    }
-
-    /**
-     * Create a collection using the current values as keys and the given values as values.
-     */
-    combine<T>(values: ItemsInput<T>): Collection<T> {
-        const keys: V[] = [...this.items.values()];
-        const combined: T[] = this.valuesOf(values);
-
-        if (keys.length !== combined.length) {
-            throw new RangeError('The number of keys and values must be equal.');
-        }
-
-        const entries: [Key, T][] = keys.map((key: V, index: number): [Key, T] => [this.scalar(key), combined[index] as T]);
-
-        return new Collection<T>(new Map<Key, T>(entries));
     }
 
     /**
@@ -306,32 +190,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Determine whether the collection holds exactly one item, or one item passing the callback.
-     */
-    containsOneItem(callback?: Callback<V, boolean>): boolean {
-        if (callback === undefined) {
-            return this.count() === 1;
-        }
-
-        return this.filter(callback).count() === 1;
-    }
-
-    /**
-     * Determine whether the collection contains the given value or key-value pair using strict comparison.
-     */
-    containsStrict(key: V | Callback<V, boolean> | Key, value?: unknown): boolean {
-        if (arguments.length === 2) {
-            return this.entries().some(([, item]: [Key, V]): boolean => this.dataGet(item, key as Key) === value);
-        }
-
-        if (typeof key === 'function') {
-            return this.contains(key);
-        }
-
-        return [...this.items.values()].some((item: V): boolean => item === key);
-    }
-
-    /**
      * Count the number of items in the collection.
      */
     count(): number {
@@ -355,164 +213,13 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Cross join the values with the given lists, returning all possible permutations.
-     */
-    crossJoin(...lists: ItemsInput<unknown>[]): Collection<unknown[]> {
-        let results: unknown[][] = [...this.items.values()].map((value: V): unknown[] => [value]);
-
-        for (const list of lists) {
-            const values: unknown[] = this.valuesOf(list);
-            const appended: unknown[][] = [];
-
-            for (const result of results) {
-                for (const value of values) {
-                    appended.push([...result, value]);
-                }
-            }
-
-            results = appended;
-        }
-
-        return new Collection<unknown[]>(results);
-    }
-
-    /**
      * Get the items whose values are not present in the given items.
      */
     diff(items: ItemsInput<V>): Collection<V> {
-        return this.diffUsing(items, (a: V, b: V): number => this.looseEquals(a, b) ? 0 : 1);
-    }
-
-    /**
-     * Get the items whose key-value pairs are not present in the given items.
-     */
-    diffAssoc(items: ItemsInput<V>): Collection<V> {
-        const others: Map<Key, V> = new Map<Key, V>(this.parse(items));
-        const entries: [Key, V][] = this.entries().filter(([key, value]: [Key, V]): boolean => !others.has(key) || !this.looseEquals(others.get(key), value));
-
-        return new Collection<V>(new Map<Key, V>(entries));
-    }
-
-    /**
-     * Get the items whose key-value pairs are not present in the given items, comparing keys with the callback.
-     */
-    diffAssocUsing(items: ItemsInput<V>, callback: Comparator<Key>): Collection<V> {
-        const others: [Key, V][] = this.parse(items);
-        const entries: [Key, V][] = this.entries().filter(([key, value]: [Key, V]): boolean => {
-            const match: [Key, V] | undefined = others.find(([other]: [Key, V]): boolean => callback(key, other) === 0);
-
-            return match === undefined || !this.looseEquals(match[1], value);
-        });
-
-        return new Collection<V>(new Map<Key, V>(entries));
-    }
-
-    /**
-     * Get the items whose keys are not present in the given items.
-     */
-    diffKeys(items: ItemsInput<unknown>): Collection<V> {
-        const others: Map<Key, unknown> = new Map<Key, unknown>(this.parse(items));
-
-        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => !others.has(key))));
-    }
-
-    /**
-     * Get the items whose keys are not present in the given items, comparing keys with the callback.
-     */
-    diffKeysUsing(items: ItemsInput<unknown>, callback: Comparator<Key>): Collection<V> {
-        const others: [Key, unknown][] = this.parse(items);
-
-        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => !others.some(([other]: [Key, unknown]): boolean => callback(key, other) === 0))));
-    }
-
-    /**
-     * Get the items whose values are not present in the given items, comparing values with the callback.
-     */
-    diffUsing(items: ItemsInput<V>, callback: Comparator<V>): Collection<V> {
         const others: V[] = this.valuesOf(items);
-        const entries: [Key, V][] = this.entries().filter(([, value]: [Key, V]): boolean => !others.some((other: V): boolean => callback(value, other) === 0));
+        const entries: [Key, V][] = this.entries().filter(([, value]: [Key, V]): boolean => !others.some((other: V): boolean => this.looseEquals(value, other)));
 
         return new Collection<V>(new Map<Key, V>(entries));
-    }
-
-    /**
-     * Determine whether the collection does not contain the given value, callback match, or condition.
-     */
-    doesntContain(key: V | Callback<V, boolean> | Key, operator?: unknown, value?: unknown): boolean {
-        switch (arguments.length) {
-            case 1:
-                return !this.contains(key);
-            case 2:
-                return !this.contains(key, operator);
-            default:
-                return !this.contains(key, operator, value);
-        }
-    }
-
-    /**
-     * Determine whether the collection does not contain the given value or pair using strict comparison.
-     */
-    doesntContainStrict(key: V | Callback<V, boolean> | Key, value?: unknown): boolean {
-        switch (arguments.length) {
-            case 1:
-                return !this.containsStrict(key);
-            default:
-                return !this.containsStrict(key, value);
-        }
-    }
-
-    /**
-     * Flatten the items into a single level, joining nested keys with dots.
-     */
-    dot(): Collection<unknown> {
-        const dotted: Map<Key, unknown> = new Map<Key, unknown>();
-
-        const flatten: (prefix: string, value: unknown) => void = (prefix: string, value: unknown): void => {
-            if (this.nested(value) && this.parse(value as ItemsInput<unknown>).length > 0) {
-                for (const [key, entry] of this.parse(value as ItemsInput<unknown>)) {
-                    flatten(`${prefix}.${String(key)}`, entry);
-                }
-
-                return;
-            }
-
-            dotted.set(this.key(prefix), value);
-        };
-
-        for (const [key, value] of this.items) {
-            flatten(String(key), value);
-        }
-
-        return new Collection<unknown>(dotted);
-    }
-
-    /**
-     * Get the values that appear more than once, keyed by the offending occurrences.
-     */
-    duplicates(callback?: Key | Callback<V>, strict: boolean = false): Collection<unknown> {
-        const retriever: Callback<V> = this.retriever(callback);
-        const seen: unknown[] = [];
-        const duplicates: Map<Key, unknown> = new Map<Key, unknown>();
-
-        for (const [key, value] of this.items) {
-            const derived: unknown = retriever(value, key);
-            const exists: boolean = strict ? seen.includes(derived) : seen.some((item: unknown): boolean => this.looseEquals(item, derived));
-
-            if (exists) {
-                duplicates.set(key, derived);
-            } else {
-                seen.push(derived);
-            }
-        }
-
-        return new Collection<unknown>(duplicates);
-    }
-
-    /**
-     * Get the values that appear more than once using strict comparison.
-     */
-    duplicatesStrict(callback?: Key | Callback<V>): Collection<unknown> {
-        return this.duplicates(callback, true);
     }
 
     /**
@@ -526,13 +233,6 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return this;
-    }
-
-    /**
-     * Iterate over the items, spreading each nested item into the callback arguments.
-     */
-    eachSpread(callback: (...args: unknown[]) => unknown): this {
-        return this.each((value: V, key: Key): unknown => callback(...this.spread(value), key));
     }
 
     /**
@@ -635,13 +335,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Map the items through the callback and collapse the results by one level.
-     */
-    flatMap<R>(callback: Callback<V, R>): Collection<unknown> {
-        return this.map(callback).collapse();
-    }
-
-    /**
      * Flatten nested items into values up to the given depth, dropping keys.
      */
     flatten(depth: number = Infinity): Collection<unknown> {
@@ -665,23 +358,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Swap the keys with their corresponding string or number values.
-     */
-    flip(): Collection<Key> {
-        const flipped: Map<Key, Key> = new Map<Key, Key>();
-
-        for (const [key, value] of this.items) {
-            if (typeof value !== 'string' && typeof value !== 'number') {
-                throw new TypeError(`Collection values must be strings or numbers to flip, [${this.typeOf(value)}] found at key [${key}].`);
-            }
-
-            flipped.set(this.key(value), key);
-        }
-
-        return new Collection<Key>(flipped);
-    }
-
-    /**
      * Remove the items with the given keys from the collection.
      */
     forget(...keys: Key[]): this {
@@ -693,13 +369,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Get the items for the given page number, sized by the given per-page count.
-     */
-    forPage(page: number, perPage: number): Collection<V> {
-        return this.slice(Math.max(0, (page - 1) * perPage), perPage);
-    }
-
-    /**
      * Get the item at the given key, falling back when the key is missing.
      */
     get(key: Key): V | undefined;
@@ -708,19 +377,6 @@ export class Collection<V = unknown> implements Iterable<V> {
         const name: Key = this.key(key);
 
         return this.items.has(name) ? this.items.get(name) : this.resolve(fallback);
-    }
-
-    /**
-     * Get the item at the given key, storing and returning the given value when missing.
-     */
-    getOrPut(key: Key, value: V | (() => V)): V {
-        const name: Key = this.key(key);
-
-        if (!this.items.has(name)) {
-            this.items.set(name, this.resolve(value));
-        }
-
-        return this.items.get(name) as V;
     }
 
     /**
@@ -781,43 +437,9 @@ export class Collection<V = unknown> implements Iterable<V> {
      * Get the items whose values are present in the given items.
      */
     intersect(items: ItemsInput<V>): Collection<V> {
-        return this.intersectUsing(items, (a: V, b: V): number => this.looseEquals(a, b) ? 0 : 1);
-    }
-
-    /**
-     * Get the items whose key-value pairs are present in the given items.
-     */
-    intersectAssoc(items: ItemsInput<V>): Collection<V> {
-        const others: Map<Key, V> = new Map<Key, V>(this.parse(items));
-
-        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key, value]: [Key, V]): boolean => others.has(key) && this.looseEquals(others.get(key), value))));
-    }
-
-    /**
-     * Get the items whose key-value pairs are present in the given items, comparing keys with the callback.
-     */
-    intersectAssocUsing(items: ItemsInput<V>, callback: Comparator<Key>): Collection<V> {
-        const others: [Key, V][] = this.parse(items);
-
-        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key, value]: [Key, V]): boolean => others.some(([other, item]: [Key, V]): boolean => callback(key, other) === 0 && this.looseEquals(item, value)))));
-    }
-
-    /**
-     * Get the items whose keys are present in the given items.
-     */
-    intersectByKeys(items: ItemsInput<unknown>): Collection<V> {
-        const others: Map<Key, unknown> = new Map<Key, unknown>(this.parse(items));
-
-        return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => others.has(key))));
-    }
-
-    /**
-     * Get the items whose values are present in the given items, comparing values with the callback.
-     */
-    intersectUsing(items: ItemsInput<V>, callback: Comparator<V>): Collection<V> {
         const others: V[] = this.valuesOf(items);
 
-        return new Collection<V>(new Map<Key, V>(this.entries().filter(([, value]: [Key, V]): boolean => others.some((other: V): boolean => callback(value, other) === 0))));
+        return new Collection<V>(new Map<Key, V>(this.entries().filter(([, value]: [Key, V]): boolean => others.some((other: V): boolean => this.looseEquals(value, other)))));
     }
 
     /**
@@ -913,81 +535,10 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Map the items into instances of the given class.
-     */
-    mapInto<T>(type: new (value: V, key: Key) => T): Collection<T> {
-        return this.map((value: V, key: Key): T => new type(value, key));
-    }
-
-    /**
-     * Map the items through the callback, spreading each nested item into its arguments.
-     */
-    mapSpread<R>(callback: (...args: unknown[]) => R): Collection<R> {
-        return this.map((value: V, key: Key): R => callback(...this.spread(value), key));
-    }
-
-    /**
-     * Map the items into a dictionary, grouping the values of each returned key into an array.
-     */
-    mapToDictionary<R>(callback: Callback<V, [Key, R]>): Collection<R[]> {
-        const dictionary: Map<Key, R[]> = new Map<Key, R[]>();
-
-        for (const [key, value] of this.items) {
-            const [name, mapped]: [Key, R] = callback(value, key);
-            const grouped: Key = this.key(name);
-
-            dictionary.set(grouped, [...(dictionary.get(grouped) ?? []), mapped]);
-        }
-
-        return new Collection<R[]>(dictionary);
-    }
-
-    /**
-     * Map the items into groups keyed by the returned key.
-     */
-    mapToGroups<R>(callback: Callback<V, [Key, R]>): Collection<Collection<R>> {
-        return this.mapToDictionary(callback).map((group: R[]): Collection<R> => new Collection<R>(group));
-    }
-
-    /**
-     * Map the items into a collection keyed by the returned key.
-     */
-    mapWithKeys<R>(callback: Callback<V, [Key, R]>): Collection<R> {
-        const mapped: Map<Key, R> = new Map<Key, R>();
-
-        for (const [key, value] of this.items) {
-            const [name, entry]: [Key, R] = callback(value, key);
-
-            mapped.set(this.key(name), entry);
-        }
-
-        return new Collection<R>(mapped);
-    }
-
-    /**
      * Get the maximum value of the items or of the retrieved values.
      */
     max(key?: Key | Callback<V>): unknown {
         return this.extreme(key, 1);
-    }
-
-    /**
-     * Get the median of the items or of the retrieved values.
-     */
-    median(key?: Key | Callback<V>): number | undefined {
-        const values: number[] = this.numbers(key).sort((a: number, b: number): number => a - b);
-
-        if (values.length === 0) {
-            return undefined;
-        }
-
-        const middle: number = Math.floor(values.length / 2);
-
-        if (values.length % 2 === 1) {
-            return values[middle] as number;
-        }
-
-        return ((values[middle - 1] as number) + (values[middle] as number)) / 2;
     }
 
     /**
@@ -998,72 +549,10 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Recursively merge the given items onto the collection.
-     */
-    mergeRecursive(items: ItemsInput<V>): Collection<V> {
-        return new Collection<V>(this.recursive(new Map<Key, unknown>(this.entries()), this.parse(items), true) as Map<Key, V>);
-    }
-
-    /**
      * Get the minimum value of the items or of the retrieved values.
      */
     min(key?: Key | Callback<V>): unknown {
         return this.extreme(key, -1);
-    }
-
-    /**
-     * Get the values that occur most often among the items or the retrieved values.
-     */
-    mode(key?: Key | Callback<V>): Key[] | undefined {
-        if (this.items.size === 0) {
-            return undefined;
-        }
-
-        const counts: Map<Key, number> = new Map<Key, number>();
-
-        for (const retrieved of this.retrieved(key)) {
-            const name: Key = this.scalar(retrieved);
-
-            counts.set(name, (counts.get(name) ?? 0) + 1);
-        }
-
-        const highest: number = Math.max(...counts.values());
-
-        return [...counts.entries()]
-            .filter(([, count]: [Key, number]): boolean => count === highest)
-            .map(([name]: [Key, number]): Key => name)
-            .sort((a: Key, b: Key): number => this.comparator(a, b));
-    }
-
-    /**
-     * Repeat the values of the collection the given number of times.
-     */
-    multiply(times: number): Collection<V> {
-        const multiplied: Collection<V> = new Collection<V>();
-
-        for (let index: number = 0; index < times; index++) {
-            multiplied.push(...this.items.values());
-        }
-
-        return multiplied;
-    }
-
-    /**
-     * Get every n-th item, starting at the given offset.
-     */
-    nth(step: number, offset: number = 0): Collection<V> {
-        const values: V[] = [];
-        let position: number = 0;
-
-        for (const value of this.slice(offset)) {
-            if (position % step === 0) {
-                values.push(value);
-            }
-
-            position++;
-        }
-
-        return new Collection<V>(values);
     }
 
     /**
@@ -1073,22 +562,6 @@ export class Collection<V = unknown> implements Iterable<V> {
         const wanted: Key[] = keys.map((key: Key): Key => this.key(key));
 
         return new Collection<V>(new Map<Key, V>(this.entries().filter(([key]: [Key, V]): boolean => wanted.includes(key))));
-    }
-
-    /**
-     * Pad the collection to the given size with the given value, prepending for a negative size.
-     */
-    pad(size: number, value: V): Collection<V> {
-        const values: V[] = [...this.items.values()];
-        const missing: number = Math.abs(size) - values.length;
-
-        if (missing <= 0) {
-            return new Collection<V>(values);
-        }
-
-        const padding: V[] = new Array<V>(missing).fill(value);
-
-        return new Collection<V>(size < 0 ? [...padding, ...values] : [...values, ...padding]);
     }
 
     /**
@@ -1110,37 +583,10 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Get the percentage of items passing the given truth test.
-     */
-    percentage(callback: Callback<V, boolean>, precision: number = 2): number | undefined {
-        if (this.items.size === 0) {
-            return undefined;
-        }
-
-        const factor: number = 10 ** precision;
-
-        return Math.round((this.filter(callback).count() / this.items.size) * 100 * factor) / factor;
-    }
-
-    /**
      * Pass the collection to the given callback and return its result.
      */
     pipe<R>(callback: (collection: this) => R): R {
         return callback(this);
-    }
-
-    /**
-     * Pass the collection into a new instance of the given class.
-     */
-    pipeInto<T>(type: new (collection: this) => T): T {
-        return new type(this);
-    }
-
-    /**
-     * Pass the collection through the given callbacks in order.
-     */
-    pipeThrough(callbacks: ((carry: unknown) => unknown)[]): unknown {
-        return callbacks.reduce((carry: unknown, callback: (carry: unknown) => unknown): unknown => callback(carry), this as unknown);
     }
 
     /**
@@ -1292,19 +738,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Reduce the collection to multiple values, carrying an array of results between iterations.
-     */
-    reduceSpread(callback: (carry: unknown[], value: V, key: Key) => unknown[], ...initial: unknown[]): unknown[] {
-        let carry: unknown[] = initial;
-
-        for (const [key, value] of this.items) {
-            carry = callback(carry, value, key);
-        }
-
-        return carry;
-    }
-
-    /**
      * Get the items failing the callback, or the falsy items when no callback is given.
      */
     reject(callback?: Callback<V>): Collection<V> {
@@ -1327,13 +760,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Recursively replace the items at the keys of the given items.
-     */
-    replaceRecursive(items: ItemsInput<V>): Collection<V> {
-        return new Collection<V>(this.recursive(new Map<Key, unknown>(this.entries()), this.parse(items), false) as Map<Key, V>);
-    }
-
-    /**
      * Reverse the order of the items, preserving keys.
      */
     reverse(): Collection<V> {
@@ -1353,25 +779,6 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return false;
-    }
-
-    /**
-     * Reduce each item to only the given keys.
-     */
-    select(...keys: Key[]): Collection<Record<string, unknown>> {
-        return this.map((value: V): Record<string, unknown> => {
-            const selected: Record<string, unknown> = {};
-
-            for (const key of keys) {
-                const retrieved: unknown = this.dataGet(value, key, MISSING);
-
-                if (retrieved !== MISSING) {
-                    selected[String(key)] = retrieved;
-                }
-            }
-
-            return selected;
-        });
     }
 
     /**
@@ -1418,20 +825,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Skip items until the given value or callback matches.
-     */
-    skipUntil(value: V | Callback<V, boolean>): Collection<V> {
-        return this.skipping(value, false);
-    }
-
-    /**
-     * Skip items while the given value or callback matches.
-     */
-    skipWhile(value: V | Callback<V, boolean>): Collection<V> {
-        return this.skipping(value, true);
-    }
-
-    /**
      * Get a slice of the items, preserving keys.
      */
     slice(offset: number, length?: number): Collection<V> {
@@ -1445,20 +838,6 @@ export class Collection<V = unknown> implements Iterable<V> {
         const end: number = length < 0 ? entries.length + length : start + length;
 
         return new Collection<V>(new Map<Key, V>(entries.slice(start, Math.max(start, end))));
-    }
-
-    /**
-     * Get a sliding window over the items of the given size, advanced by the given step.
-     */
-    sliding(size: number = 2, step: number = 1): Collection<Collection<V>> {
-        const count: number = Math.floor((this.items.size - size) / step) + 1;
-        const windows: Collection<V>[] = [];
-
-        for (let index: number = 0; index < count; index++) {
-            windows.push(this.slice(index * step, size));
-        }
-
-        return new Collection<Collection<V>>(windows);
     }
 
     /**
@@ -1484,20 +863,6 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return filtered.first() as V;
-    }
-
-    /**
-     * Determine whether the collection contains the given value, callback match, or condition.
-     */
-    some(key: V | Callback<V, boolean> | Key, operator?: unknown, value?: unknown): boolean {
-        switch (arguments.length) {
-            case 1:
-                return this.contains(key);
-            case 2:
-                return this.contains(key, operator);
-            default:
-                return this.contains(key, operator, value);
-        }
     }
 
     /**
@@ -1562,33 +927,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Sort the items by their keys in descending order.
-     */
-    sortKeysDesc(): Collection<V> {
-        return this.sortKeys(true);
-    }
-
-    /**
-     * Sort the items by their keys using the given comparator.
-     */
-    sortKeysUsing(callback: Comparator<Key>): Collection<V> {
-        return this.sorted((a: [Key, V], b: [Key, V]): number => callback(a[0], b[0]));
-    }
-
-    /**
-     * Remove and return a slice of the items, optionally replacing them, renumbering keys.
-     */
-    splice(offset: number, length?: number, replacement: ItemsInput<V> = []): Collection<V> {
-        const values: V[] = [...this.items.values()];
-        const count: number = length === undefined ? values.length - offset : length;
-        const removed: V[] = values.splice(offset, count, ...this.valuesOf(replacement));
-
-        this.items = new Map<Key, V>(values.map((value: V, index: number): [Key, V] => [index, value]));
-
-        return new Collection<V>(removed);
-    }
-
-    /**
      * Split the items into the given number of groups.
      */
     split(groups: number): Collection<Collection<V>> {
@@ -1614,13 +952,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Split the items into groups, filling each group before moving to the next.
-     */
-    splitIn(groups: number): Collection<Collection<V>> {
-        return this.chunk(Math.ceil(this.items.size / groups));
-    }
-
-    /**
      * Get the sum of the items or of the retrieved values.
      */
     sum(key?: Key | Callback<V>): number {
@@ -1632,20 +963,6 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     take(limit: number): Collection<V> {
         return limit < 0 ? this.slice(limit, Math.abs(limit)) : this.slice(0, limit);
-    }
-
-    /**
-     * Take items until the given value or callback matches.
-     */
-    takeUntil(value: V | Callback<V, boolean>): Collection<V> {
-        return this.taking(value, false);
-    }
-
-    /**
-     * Take items while the given value or callback matches.
-     */
-    takeWhile(value: V | Callback<V, boolean>): Collection<V> {
-        return this.taking(value, true);
     }
 
     /**
@@ -1690,19 +1007,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Expand dot-notated keys back into nested structures.
-     */
-    undot(): Collection<unknown> {
-        const expanded: Record<string, unknown> = {};
-
-        for (const [key, value] of this.items) {
-            this.assign(expanded, String(key).split('.'), value);
-        }
-
-        return new Collection<unknown>(this.listify(expanded) as ItemsInput<unknown>);
-    }
-
-    /**
      * Add the items of the given input that are missing from the collection.
      */
     union(items: ItemsInput<V>): Collection<V> {
@@ -1718,67 +1022,10 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Get the items with duplicate values removed.
-     */
-    unique(key?: Key | Callback<V>, strict: boolean = false): Collection<V> {
-        const retriever: Callback<V> = this.retriever(key);
-        const seen: unknown[] = [];
-
-        const entries: [Key, V][] = this.entries().filter(([name, value]: [Key, V]): boolean => {
-            const derived: unknown = retriever(value, name);
-            const exists: boolean = strict
-                ? seen.includes(derived)
-                : seen.some((item: unknown): boolean => this.looseEquals(item, derived));
-
-            if (exists) {
-                return false;
-            }
-
-            seen.push(derived);
-
-            return true;
-        });
-
-        return new Collection<V>(new Map<Key, V>(entries));
-    }
-
-    /**
-     * Get the items with duplicate values removed using strict comparison.
-     */
-    uniqueStrict(key?: Key | Callback<V>): Collection<V> {
-        return this.unique(key, true);
-    }
-
-    /**
      * Call the callback unless the given condition is truthy.
      */
     unless<R>(condition: unknown, callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
         return this.when(!this.truthy(typeof condition === 'function' ? (condition as (collection: this) => unknown)(this) : condition), callback, fallback);
-    }
-
-    /**
-     * Call the callback unless the collection is empty.
-     */
-    unlessEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
-        return this.whenNotEmpty(callback, fallback);
-    }
-
-    /**
-     * Call the callback unless the collection is not empty.
-     */
-    unlessNotEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
-        return this.whenEmpty(callback, fallback);
-    }
-
-    /**
-     * Get the value of the given key from the first item holding it.
-     */
-    value(key: Key): unknown;
-    value<F>(key: Key, fallback: F | (() => F)): unknown;
-    value(key: Key, fallback?: unknown): unknown {
-        const found: V | undefined = this.first((item: V): boolean => this.dataGet(item, key) !== null && this.dataGet(item, key) !== undefined);
-
-        return found === undefined ? this.resolve(fallback) : this.dataGet(found, key, fallback);
     }
 
     /**
@@ -1802,20 +1049,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Call the callback when the collection is empty.
-     */
-    whenEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
-        return this.when(this.isEmpty(), callback, fallback);
-    }
-
-    /**
-     * Call the callback when the collection is not empty.
-     */
-    whenNotEmpty<R>(callback: (collection: this) => R, fallback?: (collection: this) => R): R | this {
-        return this.when(this.isNotEmpty(), callback, fallback);
-    }
-
-    /**
      * Get the items matching the given key-value condition.
      */
     where(key: Key, operator?: unknown, value?: unknown): Collection<V> {
@@ -1825,92 +1058,12 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Get the items whose value at the given key falls inside the given range.
-     */
-    whereBetween(key: Key, range: [unknown, unknown]): Collection<V> {
-        return this.filter((item: V): boolean => this.compare(this.dataGet(item, key), '>=', range[0]) && this.compare(this.dataGet(item, key), '<=', range[1]));
-    }
-
-    /**
      * Get the items whose value at the given key is present in the given values.
      */
-    whereIn(key: Key, values: ItemsInput<unknown>, strict: boolean = false): Collection<V> {
+    whereIn(key: Key, values: ItemsInput<unknown>): Collection<V> {
         const allowed: unknown[] = this.valuesOf(values);
 
-        return this.filter((item: V): boolean => this.included(allowed, this.dataGet(item, key), strict));
-    }
-
-    /**
-     * Get the items whose value at the given key is present in the given values, compared strictly.
-     */
-    whereInStrict(key: Key, values: ItemsInput<unknown>): Collection<V> {
-        return this.whereIn(key, values, true);
-    }
-
-    /**
-     * Get the items that are instances of the given class.
-     */
-    whereInstanceOf<T>(type: Constructor<T>): Collection<V> {
-        return this.filter((item: V): boolean => item instanceof type);
-    }
-
-    /**
-     * Get the items whose value at the given key falls outside the given range.
-     */
-    whereNotBetween(key: Key, range: [unknown, unknown]): Collection<V> {
-        return this.filter((item: V): boolean => this.compare(this.dataGet(item, key), '<', range[0]) || this.compare(this.dataGet(item, key), '>', range[1]));
-    }
-
-    /**
-     * Get the items whose value at the given key is absent from the given values.
-     */
-    whereNotIn(key: Key, values: ItemsInput<unknown>, strict: boolean = false): Collection<V> {
-        const rejected: unknown[] = this.valuesOf(values);
-
-        return this.filter((item: V): boolean => !this.included(rejected, this.dataGet(item, key), strict));
-    }
-
-    /**
-     * Get the items whose value at the given key is absent from the given values, compared strictly.
-     */
-    whereNotInStrict(key: Key, values: ItemsInput<unknown>): Collection<V> {
-        return this.whereNotIn(key, values, true);
-    }
-
-    /**
-     * Get the items whose value at the given key is not null.
-     */
-    whereNotNull(key?: Key): Collection<V> {
-        return this.filter((item: V): boolean => !this.nullish(key === undefined ? item : this.dataGet(item, key)));
-    }
-
-    /**
-     * Get the items whose value at the given key is null.
-     */
-    whereNull(key?: Key): Collection<V> {
-        return this.filter((item: V): boolean => this.nullish(key === undefined ? item : this.dataGet(item, key)));
-    }
-
-    /**
-     * Get the items matching the given key-value condition using strict comparison.
-     */
-    whereStrict(key: Key, value: unknown): Collection<V> {
-        return this.where(key, '===', value);
-    }
-
-    /**
-     * Zip the collection together with the given lists, index by index.
-     */
-    zip(...lists: ItemsInput<unknown>[]): Collection<Collection<unknown>> {
-        const sources: unknown[][] = [[...this.items.values()], ...lists.map((list: ItemsInput<unknown>): unknown[] => this.valuesOf(list))];
-        const length: number = Math.max(...sources.map((source: unknown[]): number => source.length));
-        const zipped: Collection<unknown>[] = [];
-
-        for (let index: number = 0; index < length; index++) {
-            zipped.push(new Collection<unknown>(sources.map((source: unknown[]): unknown => index < source.length ? source[index] : null)));
-        }
-
-        return new Collection<Collection<unknown>>(zipped);
+        return this.filter((item: V): boolean => allowed.some((value: unknown): boolean => this.looseEquals(value, this.dataGet(item, key))));
     }
 
     /**
@@ -2042,13 +1195,6 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     protected nested(value: unknown): boolean {
         return value instanceof Collection || value instanceof Map || Array.isArray(value) || Collection.plain(value);
-    }
-
-    /**
-     * Get the values of a nested item, or the value itself when it holds none.
-     */
-    protected spread(value: unknown): unknown[] {
-        return this.nested(value) ? this.valuesOf(value as ItemsInput<unknown>) : [value];
     }
 
     /**
@@ -2241,13 +1387,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Determine whether a value is present among the given values.
-     */
-    protected included(values: unknown[], value: unknown, strict: boolean): boolean {
-        return values.some((entry: unknown): boolean => strict ? entry === value : this.looseEquals(entry, value));
-    }
-
-    /**
      * Read a value out of a nested structure using dot notation and wildcards.
      */
     protected dataGet(target: unknown, key: Key | null, fallback?: unknown): unknown {
@@ -2310,15 +1449,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Get the retrieved values of every item as numbers, skipping nullish ones.
-     */
-    protected numbers(key?: Key | Callback<V>): number[] {
-        return this.retrieved(key)
-            .filter((value: unknown): boolean => !this.nullish(value))
-            .map((value: unknown): number => Number(value));
-    }
-
-    /**
      * Get the highest or lowest retrieved value, skipping nullish ones.
      */
     protected extreme(key: Key | Callback<V> | undefined, direction: number): unknown {
@@ -2358,44 +1488,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Merge or replace entries recursively, descending into nested items on both sides.
-     */
-    protected recursive(base: Map<Key, unknown>, additions: [Key, unknown][], combine: boolean): Map<Key, unknown> {
-        const merged: Map<Key, unknown> = new Map<Key, unknown>(base);
-
-        for (const [key, value] of additions) {
-            if (combine && typeof key === 'number') {
-                merged.set(this.next(merged), value);
-
-                continue;
-            }
-
-            if (!merged.has(key)) {
-                merged.set(key, value);
-
-                continue;
-            }
-
-            const existing: unknown = merged.get(key);
-
-            if (this.nested(existing) && this.nested(value)) {
-                const nested: Map<Key, unknown> = this.recursive(new Map<Key, unknown>(this.parse(existing as ItemsInput<unknown>)), this.parse(value as ItemsInput<unknown>), combine);
-
-                merged.set(key, this.shape(nested));
-            } else if (combine) {
-                // PHP's recursive merge keeps both sides of a duplicate string key by
-                // collecting the scalar values into a single list rather than letting
-                // the later value overwrite the earlier one.
-                merged.set(key, [...this.spread(existing), ...this.spread(value)]);
-            } else {
-                merged.set(key, value);
-            }
-        }
-
-        return merged;
-    }
-
-    /**
      * Render entries as an array for a list of keys and as a plain object otherwise.
      */
     protected shape(entries: Map<Key, unknown>): unknown {
@@ -2428,49 +1520,6 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Assign a value at the path described by the given key segments.
-     */
-    protected assign(target: Record<string, unknown>, segments: string[], value: unknown): void {
-        const segment: string = segments[0] as string;
-
-        if (segments.length === 1) {
-            target[segment] = value;
-
-            return;
-        }
-
-        const existing: unknown = target[segment];
-        const nested: Record<string, unknown> = Collection.plain(existing) ? existing as Record<string, unknown> : {};
-
-        target[segment] = nested;
-
-        this.assign(nested, segments.slice(1), value);
-    }
-
-    /**
-     * Convert objects whose keys form a zero-based sequence into arrays, recursively.
-     */
-    protected listify(value: unknown): unknown {
-        if (!Collection.plain(value)) {
-            return value;
-        }
-
-        const record: Record<string, unknown> = value as Record<string, unknown>;
-        const keys: string[] = Object.keys(record);
-        const mapped: Record<string, unknown> = {};
-
-        for (const key of keys) {
-            mapped[key] = this.listify(record[key]);
-        }
-
-        if (keys.length > 0 && keys.every((key: string, index: number): boolean => key === String(index))) {
-            return keys.map((key: string): unknown => mapped[key]);
-        }
-
-        return mapped;
-    }
-
-    /**
      * Sort the entries of the collection with the given comparator.
      */
     protected sorted(comparator: (a: [Key, V], b: [Key, V]) => number): Collection<V> {
@@ -2490,44 +1539,5 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return shuffled;
-    }
-
-    /**
-     * Skip items until, or for as long as, the given value or callback matches.
-     */
-    protected skipping(value: V | Callback<V, boolean>, matching: boolean): Collection<V> {
-        const predicate: Callback<V, boolean> = this.equality(value, false);
-        const entries: [Key, V][] = [];
-        let skipping: boolean = true;
-
-        for (const [key, item] of this.items) {
-            if (skipping && this.truthy(predicate(item, key)) !== matching) {
-                skipping = false;
-            }
-
-            if (!skipping) {
-                entries.push([key, item]);
-            }
-        }
-
-        return new Collection<V>(new Map<Key, V>(entries));
-    }
-
-    /**
-     * Take items until, or for as long as, the given value or callback matches.
-     */
-    protected taking(value: V | Callback<V, boolean>, matching: boolean): Collection<V> {
-        const predicate: Callback<V, boolean> = this.equality(value, false);
-        const entries: [Key, V][] = [];
-
-        for (const [key, item] of this.items) {
-            if (this.truthy(predicate(item, key)) !== matching) {
-                break;
-            }
-
-            entries.push([key, item]);
-        }
-
-        return new Collection<V>(new Map<Key, V>(entries));
     }
 }
