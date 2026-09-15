@@ -107,7 +107,7 @@ export class Collection<V = unknown> implements Iterable<V> {
         for (const [name, value] of this.items) {
             const retrieved: unknown = retriever(value, name);
 
-            if (retrieved !== null && retrieved !== undefined) {
+            if (!this.nullish(retrieved)) {
                 values.push(Number(retrieved));
             }
         }
@@ -1090,7 +1090,7 @@ export class Collection<V = unknown> implements Iterable<V> {
      * Normalize any supported input into an ordered list of key-value entries.
      */
     protected parse<T>(items?: ItemsInput<T>): [Key, T][] {
-        if (items === null || items === undefined) {
+        if (this.nullish(items)) {
             return [];
         }
 
@@ -1200,7 +1200,7 @@ export class Collection<V = unknown> implements Iterable<V> {
     /**
      * Determine whether a value is null or undefined.
      */
-    protected nullish(value: unknown): boolean {
+    protected nullish(value: unknown): value is null | undefined {
         return value === null || value === undefined;
     }
 
