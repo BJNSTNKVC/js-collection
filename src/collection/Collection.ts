@@ -123,7 +123,7 @@ export class Collection<V = unknown> implements Iterable<V> {
 
         const found: [Key, V] | undefined = entries[index + 1];
 
-        return found === undefined ? undefined : found[1];
+        return found?.[1];
     }
 
     /**
@@ -150,7 +150,7 @@ export class Collection<V = unknown> implements Iterable<V> {
         for (const [name, value] of this.items) {
             const retrieved: unknown = retriever(value, name);
 
-            if (retrieved !== null && retrieved !== undefined) {
+            if (!this.nullish(retrieved)) {
                 values.push(Number(retrieved));
             }
         }
@@ -176,7 +176,7 @@ export class Collection<V = unknown> implements Iterable<V> {
 
         const found: [Key, V] | undefined = entries[index - 1];
 
-        return found === undefined ? undefined : found[1];
+        return found?.[1];
     }
 
     /**
@@ -468,8 +468,10 @@ export class Collection<V = unknown> implements Iterable<V> {
         const dotted: Map<Key, unknown> = new Map<Key, unknown>();
 
         const flatten: (prefix: string, value: unknown) => void = (prefix: string, value: unknown): void => {
-            if (this.nested(value) && this.parse(value as ItemsInput<unknown>).length > 0) {
-                for (const [key, entry] of this.parse(value as ItemsInput<unknown>)) {
+            const entries: [Key, unknown][] = this.nested(value) ? this.parse(value as ItemsInput<unknown>) : [];
+
+            if (entries.length > 0) {
+                for (const [key, entry] of entries) {
                     flatten(`${prefix}.${String(key)}`, entry);
                 }
 
@@ -1580,7 +1582,7 @@ export class Collection<V = unknown> implements Iterable<V> {
      */
     splice(offset: number, length?: number, replacement: ItemsInput<V> = []): Collection<V> {
         const values: V[] = [...this.items.values()];
-        const count: number = length === undefined ? values.length - offset : length;
+        const count: number = length ?? values.length - offset;
         const removed: V[] = values.splice(offset, count, ...this.valuesOf(replacement));
 
         this.items = new Map<Key, V>(values.map((value: V, index: number): [Key, V] => [index, value]));
@@ -1776,7 +1778,7 @@ export class Collection<V = unknown> implements Iterable<V> {
     value(key: Key): unknown;
     value<F>(key: Key, fallback: F | (() => F)): unknown;
     value(key: Key, fallback?: unknown): unknown {
-        const found: V | undefined = this.first((item: V): boolean => this.dataGet(item, key) !== null && this.dataGet(item, key) !== undefined);
+        const found: V | undefined = this.first((item: V): boolean => !this.nullish(this.dataGet(item, key)));
 
         return found === undefined ? this.resolve(fallback) : this.dataGet(found, key, fallback);
     }
@@ -1828,7 +1830,11 @@ export class Collection<V = unknown> implements Iterable<V> {
      * Get the items whose value at the given key falls inside the given range.
      */
     whereBetween(key: Key, range: [unknown, unknown]): Collection<V> {
-        return this.filter((item: V): boolean => this.compare(this.dataGet(item, key), '>=', range[0]) && this.compare(this.dataGet(item, key), '<=', range[1]));
+        return this.filter((item: V): boolean => {
+            const retrieved: unknown = this.dataGet(item, key);
+
+            return this.compare(retrieved, '>=', range[0]) && this.compare(retrieved, '<=', range[1]);
+        });
     }
 
     /**
@@ -1858,7 +1864,11 @@ export class Collection<V = unknown> implements Iterable<V> {
      * Get the items whose value at the given key falls outside the given range.
      */
     whereNotBetween(key: Key, range: [unknown, unknown]): Collection<V> {
-        return this.filter((item: V): boolean => this.compare(this.dataGet(item, key), '<', range[0]) || this.compare(this.dataGet(item, key), '>', range[1]));
+        return this.filter((item: V): boolean => {
+            const retrieved: unknown = this.dataGet(item, key);
+
+            return this.compare(retrieved, '<', range[0]) || this.compare(retrieved, '>', range[1]);
+        });
     }
 
     /**
@@ -1937,7 +1947,7 @@ export class Collection<V = unknown> implements Iterable<V> {
      * Normalize any supported input into an ordered list of key-value entries.
      */
     protected parse<T>(items?: ItemsInput<T>): [Key, T][] {
-        if (items === null || items === undefined) {
+        if (this.nullish(items)) {
             return [];
         }
 
@@ -2054,7 +2064,7 @@ export class Collection<V = unknown> implements Iterable<V> {
     /**
      * Determine whether a value is null or undefined.
      */
-    protected nullish(value: unknown): boolean {
+    protected nullish(value: unknown): value is null | undefined {
         return value === null || value === undefined;
     }
 
