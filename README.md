@@ -18,6 +18,18 @@ and then import it into your project
 import { Collection } from '@bjnstnkvc/collection';
 ```
 
+### Lite
+
+If the full set of methods is more than you need, the `lite` branch carries a simplified variant of the package. It keeps the everyday API: creating and retrieving items, `filter`, `reject`, `where` and `whereIn`, `map`, `pluck` and `transform`, grouping and chunking, sorting, slicing, the set operations, the aggregates, the mutating methods, the flow control helpers and serialization. It drops the long tail: the strict and custom comparator variants such as `containsStrict`, `uniqueStrict`, `diffUsing` and `intersectUsing`, the keyed `diffAssoc` and `intersectByKeys` family, the spread helpers, `mapWithKeys`, `mapInto`, `mapToGroups` and `flatMap`, `unique` and `duplicates`, the recursive merges, `dot` and `undot`, `median`, `mode` and `percentage`, `zip`, `crossJoin`, `sliding`, `nth`, `pad`, `multiply`, `splice`, `value`, `after` and `before`, along with the remaining where variants such as `whereBetween`, `whereNull` and `whereInstanceOf`, so a collection is left with the methods you reach for every day.
+
+It is not published to npm. Install it from the branch, which npm builds during install:
+
+```bash
+npm install github:BJNSTNKVC/js-collection#lite
+```
+
+The API is otherwise the one documented below, so everything except the dropped methods applies there too.
+
 ## Usage
 
 ### Creating a Collection
