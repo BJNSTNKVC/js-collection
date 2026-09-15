@@ -1131,7 +1131,7 @@ export class Collection<V = unknown> implements Iterable<V> {
     }
 
     /**
-     * Determine whether the keys form a zero-based sequence, i.e. a list.
+     * Determine whether the keys form a zero-based sequence.
      */
     protected list(): boolean {
         let index: number = 0;
