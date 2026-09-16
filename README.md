@@ -18,6 +18,12 @@ npm clones the branch, installs its dependencies and builds it on install, so no
 import { Collection } from '@bjnstnkvc/collection';
 ```
 
+The `collect` helper is exported too, for when you would rather reach for it the way you would in Laravel:
+
+```ts
+import { collect } from '@bjnstnkvc/collection';
+```
+
 ## Usage
 
 ### Creating a Collection
@@ -78,9 +84,21 @@ Since any iterable is consumed as a list of values, a `Set` or a generator becom
 
 ### Creating a Collection Statically
 
+#### collect()
+
+The `collect` helper mirrors Laravel's global helper of the same name, creating a collection from the given items without reaching for the class. It accepts everything the constructor does:
+
+```ts
+import { collect } from '@bjnstnkvc/collection';
+
+collect([1, 2, 3]); // [1, 2, 3]
+collect({ a: 1 });  // { a: 1 }
+collect<number>();  // empty
+```
+
 #### Collection.make()
 
-The `make` method creates a collection from the given items, reading like Laravel's `collect` helper:
+The `make` method creates a collection from the given items, just like the `collect` helper:
 
 ```ts
 Collection.make([1, 2, 3]);
