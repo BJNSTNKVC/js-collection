@@ -18,6 +18,12 @@ and then import it into your project
 import { Collection } from '@bjnstnkvc/collection';
 ```
 
+The `collect` helper is exported too, for when you would rather reach for it the way you would in Laravel:
+
+```ts
+import { collect } from '@bjnstnkvc/collection';
+```
+
 ### Lite
 
 If the full set of methods is more than you need, the `lite` branch carries a simplified variant of the package. It keeps the everyday API: creating and retrieving items, `filter`, `reject`, `where` and `whereIn`, `map`, `pluck` and `transform`, grouping and chunking, sorting, slicing, the set operations, the aggregates, the mutating methods, the flow control helpers and serialization. It drops the long tail: the strict and custom comparator variants such as `containsStrict`, `uniqueStrict`, `diffUsing` and `intersectUsing`, the keyed `diffAssoc` and `intersectByKeys` family, the spread helpers, `mapWithKeys`, `mapInto`, `mapToGroups` and `flatMap`, `unique` and `duplicates`, the recursive merges, `dot` and `undot`, `median`, `mode` and `percentage`, `zip`, `crossJoin`, `sliding`, `nth`, `pad`, `multiply`, `splice`, `value`, `after` and `before`, along with the remaining where variants such as `whereBetween`, `whereNull` and `whereInstanceOf`, so a collection is left with the methods you reach for every day.
@@ -90,9 +96,21 @@ Since any iterable is consumed as a list of values, a `Set` or a generator becom
 
 ### Creating a Collection Statically
 
+#### collect()
+
+The `collect` helper mirrors Laravel's global helper of the same name, creating a collection from the given items without reaching for the class. It accepts everything the constructor does:
+
+```ts
+import { collect } from '@bjnstnkvc/collection';
+
+collect([1, 2, 3]); // [1, 2, 3]
+collect({ a: 1 });  // { a: 1 }
+collect<number>();  // empty
+```
+
 #### Collection.make()
 
-The `make` method creates a collection from the given items, reading like Laravel's `collect` helper:
+The `make` method creates a collection from the given items, just like the `collect` helper:
 
 ```ts
 Collection.make([1, 2, 3]);
