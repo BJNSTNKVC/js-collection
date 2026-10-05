@@ -1013,6 +1013,126 @@ for (const value of collection) {
 const values: number[] = [...collection];
 ```
 
+### Higher Order Messages
+
+Collections support higher order messages, shortcuts for performing common actions on collections. The methods that provide them are `average`, `avg`, `contains`, `each`, `every`, `filter`, `first`, `flatMap`, `groupBy`, `keyBy`, `map`, `max`, `min`, `partition`, `reject`, `skipUntil`, `skipWhile`, `some`, `sortBy`, `sortByDesc`, `sum`, `takeUntil`, `takeWhile` and `unique`.
+
+Reading a member off one of these methods runs it against that member of every item, reading properties and calling methods with the given arguments. Take a collection of users:
+
+```ts
+class User {
+    /**
+     * The name of the user.
+     */
+    name: string;
+
+    /**
+     * The number of votes the user has cast.
+     */
+    votes: number;
+
+    /**
+     * Whether the user is active.
+     */
+    active: boolean;
+
+    /**
+     * Whether the user has been marked as a VIP.
+     */
+    vip: boolean = false;
+
+    /**
+     * Create a new user.
+     */
+    constructor(name: string, votes: number, active: boolean) {
+        this.name = name;
+        this.votes = votes;
+        this.active = active;
+    }
+
+    /**
+     * Get the votes of the user weighted by the given multiplier.
+     */
+    score(multiplier: number): number {
+        return this.votes * multiplier;
+    }
+
+    /**
+     * Mark the user as a VIP.
+     */
+    markAsVip(): void {
+        this.vip = true;
+    }
+}
+
+const users: Collection<User> = new Collection<User>([
+    new User('Abigail', 20, false),
+    new User('Taylor', 10, true),
+    new User('Jess', 30, true),
+]);
+```
+
+Reading a property off one of the methods sends it to every user:
+
+```ts
+users.map.name.all();   // ['Abigail', 'Taylor', 'Jess']
+users.sum.votes;        // 60
+users.avg.votes;        // 20
+users.max.votes;        // 30
+users.every.active;     // false
+users.contains.active;  // true
+users.first.active;     // User { name: 'Taylor', … }
+```
+
+The methods that return a collection keep their keys, and the messages chain like any other call:
+
+```ts
+users.filter.active.map.name.all();   // { 1: 'Taylor', 2: 'Jess' }
+users.reject.active.map.name.all();   // ['Abigail']
+users.unique.active.map.name.all();   // ['Abigail', 'Taylor']
+users.sortBy.votes.map.name.all();    // { 1: 'Taylor', 0: 'Abigail', 2: 'Jess' }
+users.keyBy.name.keys().all();        // ['Abigail', 'Taylor', 'Jess']
+users.groupBy.active
+    .map((group: Collection<User>): unknown => group.map.name.all())
+    .all();                           // [['Abigail'], ['Taylor', 'Jess']]
+```
+
+A member that holds a method is called instead, with the arguments passed along to every item:
+
+```ts
+users.map.score(2).all();  // [40, 20, 60]
+users.sum.score(2);        // 120
+users.each.markAsVip();    // every user now has vip set to true
+users.map.vip.all();       // [true, true, true]
+```
+
+The methods stay callable as usual, so `users.map((user: User): string => user.name)` works as before, and the results are typed from the items, so `users.map.name` is a `Collection<string>` and `users.sum.votes` a `number`.
+
+The `proxy` method adds higher order messages to another method, though its results are left for you to type:
+
+```ts
+Collection.proxy('median');
+
+(users.median as unknown as { votes: number }).votes; // 20
+```
+
+JavaScript reads `users.each.markAsVip` before it knows whether a call follows, unlike PHP, so whether a member is read or called is decided by the items: a member holding a function on the first item that has it is called, and anything else is read. It follows that:
+
+- A function stored as a property is called rather than read, so reach for a callback when you need the functions themselves.
+- An empty collection has no items to decide by. Reading works as usual, and so does calling through a method that returns a collection, since that result stands in for a callable too. The methods that return a plain value, which are `average`, `avg`, `contains`, `every`, `first`, `max`, `min`, `some` and `sum`, cannot do the same, so calling an item method through one of them on an empty collection throws a `TypeError`. Guard such a call with `isNotEmpty`, or pass a callback instead:
+
+```ts
+const nobody: Collection<User> = new Collection<User>();
+
+nobody.sum.votes;            // 0
+nobody.each.markAsVip();     // the collection, as with any other empty run
+nobody.filter.active.all();  // []
+nobody.sum.score(2);         // TypeError: nobody.sum.score is not a function
+
+nobody.isNotEmpty() ? nobody.sum.score(2) : 0;                       // 0
+nobody.sum((user: User): number => user.score(2));                   // 0
+```
+
 ## Notes
 
 Loose comparison, used by `contains`, `where`, `unique` and friends, follows the spirit of PHP's `==` rather than JavaScript's: `null` and `undefined` are interchangeable, numbers compare equal to numeric strings, booleans compare by truthiness, plain objects and arrays compare by their entries, and dates compare by their time. An object is never equal to a scalar. The `whereStrict`, `containsStrict` and `uniqueStrict` variants use `===` instead.

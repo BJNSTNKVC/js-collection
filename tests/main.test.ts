@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { Collection, collect, ItemNotFoundException, MultipleItemsFoundException } from '../src/main';
+import { Collection, collect, HigherOrderCollectionProxy, ItemNotFoundException, MultipleItemsFoundException } from '../src/main';
 
 describe('Main', (): void => {
     test('exports Collection class', (): void => {
@@ -11,6 +11,10 @@ describe('Main', (): void => {
     test('exports the lookup exceptions', (): void => {
         expect(typeof ItemNotFoundException).toBe('function');
         expect(typeof MultipleItemsFoundException).toBe('function');
+    });
+
+    test('exports the higher order proxy', (): void => {
+        expect(typeof HigherOrderCollectionProxy).toBe('function');
     });
 
     test('exports the collect helper', (): void => {
@@ -25,5 +29,6 @@ describe('Main', (): void => {
         expect(module.collect).toBe(collect);
         expect(module.ItemNotFoundException).toBe(ItemNotFoundException);
         expect(module.MultipleItemsFoundException).toBe(MultipleItemsFoundException);
+        expect(module.HigherOrderCollectionProxy).toBe(HigherOrderCollectionProxy);
     });
 });

@@ -1,4 +1,5 @@
 import { ItemNotFoundException, MultipleItemsFoundException } from './exceptions';
+import { install, type HigherOrderMessages } from './HigherOrderCollectionProxy';
 import type { Callback, Comparator, Constructor, Criteria, Direction, ItemsInput, Key, Operator, Primitive } from './types';
 
 // A sentinel telling an absent value apart from a stored undefined, which is what
@@ -6,7 +7,7 @@ import type { Callback, Comparator, Constructor, Criteria, Direction, ItemsInput
 // with an undefined value.
 const MISSING: unique symbol = Symbol('missing');
 
-export class Collection<V = unknown> implements Iterable<V> {
+export abstract class BaseCollection<V = unknown> implements Iterable<V> {
     /**
      * The entries contained in the collection, keyed like a PHP array.
      */
@@ -1467,7 +1468,7 @@ export class Collection<V = unknown> implements Iterable<V> {
      * Get the sole item, or the sole item matching the truth test, throwing otherwise.
      */
     sole(key?: Key | Callback<V>, operator?: unknown, value?: unknown): V {
-        let filtered: Collection<V> = this;
+        let filtered: BaseCollection<V> = this;
 
         if (arguments.length === 1) {
             filtered = this.filter(this.retriever(key));
@@ -2539,5 +2540,79 @@ export class Collection<V = unknown> implements Iterable<V> {
         }
 
         return new Collection<V>(new Map<Key, V>(entries));
+    }
+}
+
+export interface Collection<V = unknown> {
+    average: BaseCollection<V>['average'] & HigherOrderMessages<V, 'average'>;
+    avg: BaseCollection<V>['avg'] & HigherOrderMessages<V, 'avg'>;
+    contains: BaseCollection<V>['contains'] & HigherOrderMessages<V, 'contains'>;
+    each: ((callback: Callback<V>) => this) & HigherOrderMessages<V, 'each'>;
+    every: BaseCollection<V>['every'] & HigherOrderMessages<V, 'every'>;
+    filter: BaseCollection<V>['filter'] & HigherOrderMessages<V, 'filter'>;
+    first: BaseCollection<V>['first'] & HigherOrderMessages<V, 'first'>;
+    flatMap: BaseCollection<V>['flatMap'] & HigherOrderMessages<V, 'flatMap'>;
+    groupBy: BaseCollection<V>['groupBy'] & HigherOrderMessages<V, 'groupBy'>;
+    keyBy: BaseCollection<V>['keyBy'] & HigherOrderMessages<V, 'keyBy'>;
+    map: BaseCollection<V>['map'] & HigherOrderMessages<V, 'map'>;
+    max: BaseCollection<V>['max'] & HigherOrderMessages<V, 'max'>;
+    min: BaseCollection<V>['min'] & HigherOrderMessages<V, 'min'>;
+    partition: BaseCollection<V>['partition'] & HigherOrderMessages<V, 'partition'>;
+    reject: BaseCollection<V>['reject'] & HigherOrderMessages<V, 'reject'>;
+    skipUntil: BaseCollection<V>['skipUntil'] & HigherOrderMessages<V, 'skipUntil'>;
+    skipWhile: BaseCollection<V>['skipWhile'] & HigherOrderMessages<V, 'skipWhile'>;
+    some: BaseCollection<V>['some'] & HigherOrderMessages<V, 'some'>;
+    sortBy: BaseCollection<V>['sortBy'] & HigherOrderMessages<V, 'sortBy'>;
+    sortByDesc: BaseCollection<V>['sortByDesc'] & HigherOrderMessages<V, 'sortByDesc'>;
+    sum: BaseCollection<V>['sum'] & HigherOrderMessages<V, 'sum'>;
+    takeUntil: BaseCollection<V>['takeUntil'] & HigherOrderMessages<V, 'takeUntil'>;
+    takeWhile: BaseCollection<V>['takeWhile'] & HigherOrderMessages<V, 'takeWhile'>;
+    unique: BaseCollection<V>['unique'] & HigherOrderMessages<V, 'unique'>;
+}
+
+export class Collection<V = unknown> extends BaseCollection<V> {
+    /**
+     * The methods that can be proxied.
+     */
+    protected static proxies: string[] = [
+        'average',
+        'avg',
+        'contains',
+        'each',
+        'every',
+        'filter',
+        'first',
+        'flatMap',
+        'groupBy',
+        'keyBy',
+        'map',
+        'max',
+        'min',
+        'partition',
+        'reject',
+        'skipUntil',
+        'skipWhile',
+        'some',
+        'sortBy',
+        'sortByDesc',
+        'sum',
+        'takeUntil',
+        'takeWhile',
+        'unique',
+    ];
+
+    static {
+        for (const method of this.proxies) {
+            install(this.prototype, method);
+        }
+    }
+
+    /**
+     * Add a method to the list of proxied methods.
+     */
+    static proxy(method: string): void {
+        install(this.prototype, method);
+
+        this.proxies.push(method);
     }
 }
