@@ -200,4 +200,19 @@ describe('HigherOrderCollectionProxy types', (): void => {
         expectTypeOf(collection.each((): void => undefined)).toEqualTypeOf<Collection<User>>();
         expectTypeOf(collection.first()).toEqualTypeOf<User | undefined>();
     });
+
+    test('keep a collection of any assignable to and from a typed collection', (): void => {
+        class Users extends Collection<User> {}
+
+        expectTypeOf<Collection<User>>().toExtend<Collection<any>>();
+        expectTypeOf<Collection<any>>().toExtend<Collection<User>>();
+        expectTypeOf<Users>().toExtend<Collection<any>>();
+    });
+
+    test('keep the methods of a collection of any typed', (): void => {
+        const collection: Collection<any> = new Collection<any>([]);
+
+        expectTypeOf(collection.map((user) => user.name)).toEqualTypeOf<Collection<any>>();
+        expectTypeOf(collection.first()).toEqualTypeOf<any>();
+    });
 });

@@ -2,9 +2,6 @@ import { ItemNotFoundException, MultipleItemsFoundException } from './exceptions
 import { install, type HigherOrderMessages } from './HigherOrderCollectionProxy';
 import type { Callback, Comparator, Constructor, Criteria, Direction, ItemsInput, Key, Operator, Primitive } from './types';
 
-// A sentinel telling an absent value apart from a stored undefined, which is what
-// lets `select` skip the keys an item does not carry instead of writing them out
-// with an undefined value.
 const MISSING: unique symbol = Symbol('missing');
 
 export abstract class BaseCollection<V = unknown> implements Iterable<V> {
@@ -1964,9 +1961,6 @@ export abstract class BaseCollection<V = unknown> implements Iterable<V> {
             return items.map((value: T, index: number): [Key, T] => [index, value]);
         }
 
-        // Sets and generators are the JavaScript counterpart of a PHP Traversable,
-        // so any other iterable is consumed as a list of values rather than being
-        // read as a record of its own enumerable properties.
         if (typeof (items as Iterable<T>)[Symbol.iterator] === 'function') {
             return [...(items as Iterable<T>)].map((value: T, index: number): [Key, T] => [index, value]);
         }
@@ -2394,9 +2388,6 @@ export abstract class BaseCollection<V = unknown> implements Iterable<V> {
 
                 merged.set(key, this.shape(nested));
             } else if (combine) {
-                // PHP's recursive merge keeps both sides of a duplicate string key by
-                // collecting the scalar values into a single list rather than letting
-                // the later value overwrite the earlier one.
                 merged.set(key, [...this.spread(existing), ...this.spread(value)]);
             } else {
                 merged.set(key, value);

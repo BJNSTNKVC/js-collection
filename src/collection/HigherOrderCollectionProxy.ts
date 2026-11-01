@@ -30,15 +30,13 @@ export type HigherOrderResults<V, R> = {
 export type Proxied = keyof HigherOrderResults<unknown, unknown>;
 
 export type HigherOrderMessages<V, M extends Proxied> = {
-    readonly [K in keyof NonNullable<V>]-?: NonNullable<NonNullable<V>[K]> extends (...args: infer A) => infer R
+    readonly [K in keyof NonNullable<V> & PropertyKey]: NonNullable<NonNullable<V>[K]> extends (...args: infer A) => infer R
         ? (...args: A) => HigherOrderResults<V, R>[M]
         : HigherOrderResults<V, NonNullable<V>[K]>[M];
 };
 
 type Method = (...args: unknown[]) => unknown;
 
-// The getters installed in place of proxied methods, which is how registering a
-// method twice, or once more from a subclass, is told apart from a missing one.
 const getters: WeakSet<object> = new WeakSet<object>();
 
 export class HigherOrderCollectionProxy {
@@ -66,9 +64,6 @@ export class HigherOrderCollectionProxy {
     get(key: string): unknown {
         const invoke: Method = (...args: unknown[]): unknown => this.method.call(this.collection, (item: unknown): unknown => ((item as Record<string, Method>)[key] as Method)(...args));
 
-        // PHP tells `$users->each->markAsVip()` from a property by its separate __get
-        // and __call, while JavaScript reads the member before it knows whether a call
-        // follows, so the form is told apart by what the items hold under the key.
         const sample: unknown = this.sample(key);
 
         if (typeof sample === 'function') {
@@ -103,9 +98,6 @@ export class HigherOrderCollectionProxy {
      * Stand in for a result whose form the items could not tell, behaving like it until called as a method.
      */
     protected deferred(result: object, invoke: Method): unknown {
-        // Only an empty collection, or one whose items all lack the member, lands here.
-        // An empty one never runs the callback, so both forms share this result, and
-        // wrapping it keeps `users.each.markAsVip()` from throwing when nobody matched.
         return new Proxy<Method>(invoke, {
             get: (_: Method, key: string | symbol): unknown => Reflect.get(result, key),
             set: (_: Method, key: string | symbol, value: unknown): boolean => Reflect.set(result, key, value),
